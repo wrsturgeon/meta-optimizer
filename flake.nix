@@ -14,10 +14,6 @@
         version = "0.0.1";
         src = ./.;
         buildInputs = with pypkgs; [ jax jaxlib-bin python ];
-        executableContents = ''
-          #!/usr/bin/env bash
-          ${pypkgs.python}/bin/python main.py
-        '';
       in {
         packages.default = pkgs.stdenv.mkDerivation {
           inherit buildInputs pname src version;
@@ -25,7 +21,9 @@
           installPhase = ''
             mkdir -p $out/bin
             mv ./* $out/
-            echo '${executableContents}' > $out/bin/${pname}
+            echo '#!/usr/bin/env bash' > $out/bin/${pname}
+            echo "cd $out/src" >> $out/bin/${pname}
+            echo "${pypkgs.python}/bin/python $out/src/main.py" >> $out/bin/${pname}
             chmod +x $out/bin/${pname}
           '';
         };
