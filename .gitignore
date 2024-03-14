@@ -1,0 +1,8 @@
+# macOS directory info
+**/.DS_Store
+
+# Nix build alias
+**/result
+
+# `direnv` build artifacts
+**/.direnv
