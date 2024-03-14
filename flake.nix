@@ -13,7 +13,7 @@
         pname = "meta-optimizer";
         version = "0.0.1";
         src = ./.;
-        buildInputs = with pypkgs; [ python torch ];
+        buildInputs = with pypkgs; [ jax jaxlib-bin python ];
         executableContents = ''
           #!/usr/bin/env bash
           ${pypkgs.python}/bin/python main.py
