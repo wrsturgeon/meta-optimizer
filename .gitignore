@@ -6,3 +6,7 @@
 
 # `direnv` build artifacts
 **/.direnv
+
+# Python caches
+**/__pycache__
+**/.hypothesis
