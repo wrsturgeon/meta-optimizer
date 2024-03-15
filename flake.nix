@@ -13,11 +13,15 @@
         pname = "meta-optimizer";
         version = "0.0.1";
         src = ./.;
-        buildInputs = with pypkgs; [ hypothesis jax jaxlib-bin python ];
-        testInputs = with pypkgs; [ pytest ];
+        jax = pypkgs.jax.overridePythonAttrs (old: {
+          doCheck = false;
+          propagatedBuildInputs = old.propagatedBuildInputs
+            ++ [ pypkgs.jaxlib-bin ];
+        });
+        buildInputs = [ jax ] ++ (with pypkgs; [ hypothesis python ]);
+        checkInputs = with pypkgs; [ pytest ];
         shellInputs = with pypkgs; [ black python-lsp-server ];
-        buildPhase = ":";
-        installAndRun = exec: ''
+        buildAndRun = exec: ''
           mkdir -p $out/bin
           mv ./* $out/
           echo '#!/usr/bin/env bash' > $out/bin/${pname}
@@ -25,21 +29,18 @@
           echo "${exec}" >> $out/bin/${pname}
           chmod +x $out/bin/${pname}
         '';
+        checkPhase = ''
+          ${pypkgs.pytest}/bin/pytest $out/src/test.py
+        '';
       in {
-        packages = {
-          default = pkgs.stdenv.mkDerivation {
-            inherit buildInputs buildPhase pname src version;
-            installPhase =
-              installAndRun "${pypkgs.python}/bin/python $out/src/main.py";
-          };
-          test = pkgs.stdenv.mkDerivation {
-            inherit buildPhase pname src version;
-            buildInputs = buildInputs ++ testInputs;
-            installPhase =
-              installAndRun "${pypkgs.pytest}/bin/pytest $out/src/test.py";
-          };
+        packages.default = pkgs.stdenv.mkDerivation {
+          inherit buildInputs checkInputs checkPhase pname src version;
+          buildPhase =
+            buildAndRun "${pypkgs.python}/bin/python $out/src/main.py";
+          doCheck = true;
         };
-        devShells.default =
-          pkgs.mkShell { packages = buildInputs ++ testInputs ++ shellInputs; };
+        devShells.default = pkgs.mkShell {
+          packages = buildInputs ++ checkInputs ++ shellInputs;
+        };
       });
 }
