@@ -18,8 +18,8 @@
           propagatedBuildInputs = old.propagatedBuildInputs
             ++ [ pypkgs.jaxlib-bin ];
         });
-        buildInputs = [ jax ] ++ (with pypkgs; [ hypothesis python ]);
-        checkInputs = with pypkgs; [ pytest ];
+        propagatedBuildInputs = [ jax ] ++ (with pypkgs; [ python ]);
+        checkInputs = with pypkgs; [ hypothesis pytest ];
         shellInputs = with pypkgs; [ black python-lsp-server ];
         buildAndRun = exec: ''
           mkdir -p $out/bin
@@ -32,15 +32,27 @@
         checkPhase = ''
           ${pypkgs.pytest}/bin/pytest $out/src/test.py
         '';
-      in {
-        packages.default = pkgs.stdenv.mkDerivation {
-          inherit buildInputs checkInputs checkPhase pname src version;
+        derivationSettings = {
+          inherit propagatedBuildInputs pname src version;
           buildPhase =
             buildAndRun "${pypkgs.python}/bin/python $out/src/main.py";
-          doCheck = true;
+        };
+      in {
+        packages = {
+          default = pkgs.stdenv.mkDerivation (derivationSettings // {
+            inherit checkInputs checkPhase;
+            doCheck = true;
+          });
+          ci = pkgs.stdenv.mkDerivation (derivationSettings // {
+            propagatedBuildInputs = propagatedBuildInputs ++ checkInputs;
+            buildPhase = buildAndRun ''
+              export GITHUB_CI=1
+              ${checkPhase}
+            '';
+          });
         };
         devShells.default = pkgs.mkShell {
-          packages = buildInputs ++ checkInputs ++ shellInputs;
+          packages = propagatedBuildInputs ++ checkInputs ++ shellInputs;
         };
       });
 }

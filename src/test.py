@@ -1,8 +1,31 @@
 import distributions
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
 from jax import jit, numpy as jnp
+from os import environ
+
+
+settings.register_profile(
+    "no_deadline",
+    deadline=None,
+    derandomize=True,
+    max_examples=1000,
+)
+settings.register_profile(
+    "ci",
+    parent=settings.get_profile("no_deadline"),
+    max_examples=100000,
+    verbosity=Verbosity.verbose,
+)
+
+
+if environ.get("GITHUB_CI") == "1":
+    print("***** Running in CI mode")
+    settings.load_profile("ci")
+else:
+    print("***** NOT running in CI mode")
+    settings.load_profile("no_deadline")
 
 
 @settings(deadline=None)

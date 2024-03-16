@@ -23,6 +23,8 @@ jobs:
       run: nix build
     - name: nix run
       run: nix run
+    - name: nix run .#ci
+      run: nix run .#ci
   mac:
     runs-on: macos-latest
     steps:
@@ -41,4 +43,5 @@ jobs:
       run: nix build
     - name: nix run
       run: nix run
-
+    - name: nix run .#ci
+      run: nix run .#ci
