@@ -10,15 +10,11 @@ def normalize(x: Array, axis=None) -> Array:
     each row (i.e., each index along the last axis)
     has zero mean and unit variance.
     """
-    print(x)
     mean = jnp.mean(x, axis=axis, keepdims=True)
+    print()
     print("Mean:")
     print(mean)
     std = jnp.std(x, axis=axis, keepdims=True)
     print("Standard deviation:")
     print(std)
-    print("Mean-normalized:")
-    print(x - mean)
-    print("All-normalized:")
-    print((x - mean) / std)
     return (x - mean) / std
