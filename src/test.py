@@ -3,6 +3,7 @@ import distributions
 from hypothesis import given, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
 from jax import Array, jit, numpy as jnp
+from jax.numpy import linalg as jla
 from math import prod
 from os import environ
 
@@ -32,7 +33,7 @@ else:
     settings.load_profile("no_deadline")
 
 
-def normalize_no_axis(x: Array):
+def prop_normalize_no_axis(x: Array):
     if x.size == 0 or not jnp.all(jnp.isfinite(x)):
         return
     # Standard deviation is subject to (significant!) numerical error, so
@@ -46,21 +47,14 @@ def normalize_no_axis(x: Array):
 
 @given(hnp.arrays(dtype=jnp.float32, shape=[3, 3, 3]))
 def test_prop_normalize_no_axis(x: Array):
-    normalize_no_axis(x)
+    prop_normalize_no_axis(x)
 
 
 # Identical to the above, except along one specific axis
-def normalize_with_axis(x: Array, axis: int):
+def prop_normalize_with_axis(x: Array, axis: int):
     assert 0 <= axis < x.ndim
     auto = distributions.normalize(x, axis)
     manual = jnp.apply_along_axis(distributions.normalize, axis, x)
-    print()
-    print("Automatic:")
-    print(auto)
-    print()
-    print("Manual:")
-    print(manual)
-    print()
     assert jnp.all(
         jnp.logical_or(
             jnp.logical_or(
@@ -81,13 +75,54 @@ def normalize_with_axis(x: Array, axis: int):
 
 
 def test_normalize_with_axis_1():
-    normalize_with_axis(jnp.zeros([3, 3, 3]), axis=1)
+    prop_normalize_with_axis(jnp.zeros([3, 3, 3]), axis=1)
 
 
 def test_normalize_with_axis_2():
-    normalize_with_axis(jnp.ones([3, 3, 3]), axis=0)
+    prop_normalize_with_axis(jnp.ones([3, 3, 3]), axis=0)
 
 
-# @given(hnp.arrays(dtype=jnp.float32, shape=[3, 3, 3]), st.integers(0, 2))
-# def test_prop_normalize_with_axis(x: Array, axis: int):
-#     normalize_with_axis(x, axis=axis)
+@given(hnp.arrays(dtype=jnp.float32, shape=[3, 3, 3]), st.integers(0, 2))
+def test_prop_normalize_with_axis(x: Array, axis: int):
+    prop_normalize_with_axis(x, axis=axis)
+
+
+def prop_kabsch(to_be_rotated: Array, target: Array):
+    if (
+        jnp.allclose(0, to_be_rotated)
+        or jnp.allclose(0, target)
+        or not (jnp.all(jnp.isfinite(to_be_rotated)) and jnp.all(jnp.isfinite(target)))
+    ):
+        return
+    to_be_rotated /= jla.norm(to_be_rotated)
+    target /= jla.norm(target)
+    R = distributions.kabsch(to_be_rotated, target)
+    rotated = to_be_rotated @ R
+    loss = jnp.abs(rotated - target)
+    assert jnp.all(loss < 0.01)
+
+
+def test_kabsch_1():
+    eye = jnp.eye(1, 4).reshape(1, 1, 4)
+    actual = distributions.kabsch(eye, eye)
+    assert jnp.allclose(actual, jnp.eye(4, 4).reshape(1, 4, 4))
+
+
+def test_kabsch_2():
+    prop_kabsch(jnp.array([[[1, 0, 0, 0]]]), jnp.array([[[0, 1, 0, 0]]]))
+
+
+def test_kabsch_3():
+    prop_kabsch(jnp.ones([1, 1, 4]), jnp.ones([1, 1, 4]))
+
+
+def test_kabsch_4():
+    prop_kabsch(jnp.ones([1, 1, 4]), jnp.array([[[0, 1, 1, 1]]]))
+
+
+@given(
+    hnp.arrays(dtype=jnp.float32, shape=[1, 1, 4]),
+    hnp.arrays(dtype=jnp.float32, shape=[1, 1, 4]),
+)
+def test_prop_kabsch(to_be_rotated: Array, target: Array):
+    prop_kabsch(to_be_rotated, target)
