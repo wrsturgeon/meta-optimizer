@@ -39,3 +39,16 @@ def kabsch(to_be_rotated: Array, target: Array) -> Array:
     covariance = to_be_rotated.transpose(0, 2, 1) @ target
     u, _, vT = jla.svd(covariance)
     return u @ vT
+
+
+@jit
+def rotate_and_compare(actual: Array, ideal: Array) -> tuple[jnp.float32, Array]:
+    """
+    Calculate a rotation matrix to get `actual` as close to `ideal` as possible
+    (namely, the `R` that minimizes the norm of `(actual @ R) - ideal`)
+    and return the norm we just minimized.
+    Returns `(norm, ideal @ R, R)`
+    """
+    R = kabsch(actual, ideal)
+    aR = actual @ R
+    return jla.norm(aR - ideal), aR, R

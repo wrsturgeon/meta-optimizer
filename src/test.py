@@ -2,7 +2,7 @@ import distributions, feedforward
 
 from hypothesis import given, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
-from jax import Array, jit, numpy as jnp
+from jax import Array, jit, numpy as jnp, random as jrnd
 from jax.numpy import linalg as jla
 from math import prod
 from os import environ
@@ -46,7 +46,7 @@ def prop_normalize_no_axis(x: Array):
 
 
 @given(hnp.arrays(dtype=jnp.float32, shape=[3, 3, 3]))
-def test_prop_normalize_no_axis(x: Array):
+def test_normalize_no_axis_prop(x: Array):
     prop_normalize_no_axis(x)
 
 
@@ -116,7 +116,7 @@ def test_normalize_with_axis_4():
 
 
 @given(hnp.arrays(dtype=jnp.float32, shape=[3, 3, 3]), st.integers(0, 2))
-def test_prop_normalize_with_axis(x: Array, axis: int):
+def test_normalize_with_axis_prop(x: Array, axis: int):
     prop_normalize_with_axis(x, axis=axis)
 
 
@@ -173,13 +173,32 @@ def test_kabsch_5():
     hnp.arrays(dtype=jnp.float32, shape=[1, 1, 4]),
     hnp.arrays(dtype=jnp.float32, shape=[1, 1, 4]),
 )
-def test_prop_kabsch(to_be_rotated: Array, target: Array):
+def test_kabsch_prop(to_be_rotated: Array, target: Array):
     prop_kabsch(to_be_rotated, target)
 
 
 @given(hnp.arrays(dtype=jnp.float32, shape=[3, 3]))
-def test_prop_feedforward_id(x):
+def test_feedforward_id_prop(x):
     if not jnp.all(jnp.isfinite(x)):
         return
     y = feedforward.feedforward([jnp.eye(3, 3)], [jnp.zeros([3, 3])], x, nl=lambda z: z)
     assert jnp.allclose(y, x)
+
+
+def test_feedforward_init_1():
+    W, B = feedforward.feedforward_init([5, 42, 3, 8, 7], jrnd.PRNGKey(42))
+    y = feedforward.feedforward(W, B, jnp.ones([5]))
+    assert jnp.allclose(
+        y,
+        jnp.array(
+            [
+                0.40948272,
+                0.14077032,
+                -0.05583315,
+                -0.15906703,
+                -0.05009099,
+                0.2515578,
+                -0.13697886,
+            ]
+        ),
+    )
