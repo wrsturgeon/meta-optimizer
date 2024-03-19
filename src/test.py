@@ -125,14 +125,21 @@ def test_prop_normalize_with_axis(x: Array, axis: int):
 
 
 def prop_kabsch(to_be_rotated: Array, target: Array):
+    norm1 = jla.norm(to_be_rotated)
+    norm2 = jla.norm(target)
     if (
         jnp.allclose(0, to_be_rotated)
         or jnp.allclose(0, target)
-        or not (jnp.all(jnp.isfinite(to_be_rotated)) and jnp.all(jnp.isfinite(target)))
+        or not (
+            jnp.all(jnp.isfinite(to_be_rotated))
+            and jnp.all(jnp.isfinite(target))
+            and jnp.isfinite(norm1)
+            and jnp.isfinite(norm2)
+        )
     ):
         return
-    to_be_rotated /= jla.norm(to_be_rotated)
-    target /= jla.norm(target)
+    to_be_rotated /= norm1
+    target /= norm2
     R = distributions.kabsch(to_be_rotated, target)
     rotated = to_be_rotated @ R
     loss = jnp.abs(rotated - target)
@@ -155,6 +162,15 @@ def test_kabsch_3():
 
 def test_kabsch_4():
     prop_kabsch(jnp.ones([1, 1, 4]), jnp.array([[[0, 1, 1, 1]]]))
+
+
+def test_kabsch_5():
+    prop_kabsch(
+        to_be_rotated=jnp.array([[[1, 1, 1, 1]]], dtype=jnp.float32),
+        target=jnp.array(
+            [[[9.223372e18, 9.223372e18, 9.223372e18, 9.223372e18]]], dtype=jnp.float32
+        ),
+    )
 
 
 @given(
