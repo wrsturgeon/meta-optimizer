@@ -38,4 +38,4 @@ def kabsch(to_be_rotated: Array, target: Array) -> Array:
     assert to_be_rotated.shape == target.shape
     covariance = to_be_rotated.transpose(0, 2, 1) @ target
     u, _, vT = jla.svd(covariance)
-    return (vT.transpose(0, 2, 1) @ u.transpose(0, 2, 1)).transpose(0, 2, 1)
+    return u @ vT
