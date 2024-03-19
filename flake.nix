@@ -1,6 +1,6 @@
 {
   description =
-    "Quantifying performance of machine-learning optimizers like SGD, RMSprop & Adam.";
+    "Quantifying performance of machine-learning optimizers like RMSProp & Adam.";
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -13,6 +13,7 @@
         pname = "meta-optimizer";
         version = "0.0.1";
         src = ./.;
+        # TODO: Use pylyzer when 1.76.0+ supported
         jax = pypkgs.jax.overridePythonAttrs (old: {
           doCheck = false;
           propagatedBuildInputs = old.propagatedBuildInputs

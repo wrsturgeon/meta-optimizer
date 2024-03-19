@@ -1,4 +1,4 @@
-import distributions
+import distributions, feedforward
 
 from hypothesis import given, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
@@ -57,17 +57,13 @@ def prop_normalize_with_axis(x: Array, axis: int):
         return
     auto = distributions.normalize(x, axis)
     manual = jnp.apply_along_axis(distributions.normalize, axis, x)
-    print(f"LHZLKJHDGLKSH: {jnp.apply_along_axis(lambda z: z[0:1], axis, x)}")
     zero_variance = jnp.all(
         jnp.isclose(jnp.apply_along_axis(lambda z: z[0:1], axis, x), x),
         axis=axis,
         keepdims=True,
     )
-    print(f"zero_variance = {zero_variance}")
     loss = jnp.abs(auto - manual)
-    print(f"loss = {loss}")
     good = jnp.logical_or(zero_variance, loss < 0.01)
-    print(f"good = {good}")
     assert jnp.all(good)
 
 
@@ -179,3 +175,11 @@ def test_kabsch_5():
 )
 def test_prop_kabsch(to_be_rotated: Array, target: Array):
     prop_kabsch(to_be_rotated, target)
+
+
+@given(hnp.arrays(dtype=jnp.float32, shape=[3, 3]))
+def test_prop_feedforward_id(x):
+    if not jnp.all(jnp.isfinite(x)):
+        return
+    y = feedforward.feedforward([jnp.eye(3, 3)], [jnp.zeros([3, 3])], x, nl=lambda z: z)
+    assert jnp.allclose(y, x)
