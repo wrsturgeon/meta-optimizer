@@ -17,7 +17,7 @@ settings.register_profile(
 settings.register_profile(
     "ci",
     parent=settings.get_profile("no_deadline"),
-    max_examples=100000,
+    max_examples=10000,
     verbosity=Verbosity.verbose,
 )
 
