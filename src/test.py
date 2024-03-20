@@ -2,22 +2,24 @@ import distributions, feedforward
 
 from hypothesis import given, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
-from jax import Array, jit, numpy as jnp, random as jrnd
+from jax import Array, nn as jnn, numpy as jnp, random as jrnd
 from jax.numpy import linalg as jla
 from math import prod
 from os import environ
 
 
+TEST_COUNT_CI = 10000
+TEST_COUNT_NORMAL = 100
 settings.register_profile(
     "no_deadline",
     deadline=None,
     derandomize=True,
-    max_examples=100,
+    max_examples=TEST_COUNT_NORMAL,
 )
 settings.register_profile(
     "ci",
     parent=settings.get_profile("no_deadline"),
-    max_examples=10000,
+    max_examples=TEST_COUNT_CI,
     verbosity=Verbosity.verbose,
 )
 
@@ -26,11 +28,13 @@ gh_ci = environ.get("GITHUB_CI")
 if gh_ci == "1":
     print("***** Running in CI mode")
     settings.load_profile("ci")
+    TEST_COUNT = TEST_COUNT_CI
 else:
     print(
         f'***** NOT running in CI mode (environment variable `GITHUB_CI` is `{gh_ci}`, which is not `"1"`)'
     )
     settings.load_profile("no_deadline")
+    TEST_COUNT = TEST_COUNT_NORMAL
 
 
 def prop_normalize_no_axis(x: Array):
@@ -202,3 +206,87 @@ def test_feedforward_init_1():
             ]
         ),
     )
+
+
+def prop_rotating_weights(
+    W: Array,
+    B: Array,
+    x: Array,
+    angles: Array,
+):
+    assert isinstance(W, list)
+    assert isinstance(B, list)
+    assert isinstance(angles, list)
+    assert len(angles) == len(W)
+    if not all([jnp.all(jnp.isfinite(angle)) for angle in angles]):
+        return
+    angles = jnp.array(angles)[:, jnp.newaxis]
+    R = list(distributions.kabsch(angles[:-1], angles[1:]))  # batched!
+    print(f"R: {R}")
+    WR, BR = feedforward.rotate_weights(W, B, R)
+    print(f"W: {W}")
+    print(f"B: {B}")
+    print(f"WR: {WR}")
+    print(f"BR: {BR}")
+    y = feedforward.feedforward(W, B, x, nl=lambda z: z)
+    yR = feedforward.feedforward(WR, BR, x, nl=lambda z: z)
+    print(f"y: {y}")
+    print(f"yR: {yR}")
+    assert jnp.allclose(y, yR)
+
+
+def test_rotating_weights_1():
+    prop_rotating_weights(
+        [jnp.eye(3, 3)],
+        [jnp.eye(1, 3)[0]],
+        jnp.eye(1, 3)[0],
+        [jnp.array([1, 0, 0])],
+    )
+
+
+def test_rotating_weights_2():
+    prop_rotating_weights(
+        [jnp.eye(3, 3), jnp.eye(3, 3)],
+        [jnp.eye(1, 3)[0], jnp.eye(1, 3)[0]],
+        jnp.eye(1, 3)[0],
+        [jnp.array([1, 0, 0]), jnp.array([0, 1, 0])],
+    )
+
+
+def test_rotating_weights_3():
+    prop_rotating_weights(
+        W=list(jnp.ones([2, 3, 3])),
+        B=list(jnp.zeros([2, 3])),
+        x=jnp.ones([3]),
+        angles=[jnp.array([0.0, 1.0, 1.0]), jnp.array([1.0, 1.0, 1.0])],
+    )
+
+
+def test_rotating_weights_prop_fake():
+    for seed in range(TEST_COUNT):
+        print()
+        k1, k2, k3 = jrnd.split(jrnd.PRNGKey(seed), 3)
+        W = list(jnn.initializers.he_normal()(k1, [2, 3, 3]))
+        B = list(jnp.zeros([2, 3]))
+        x = jrnd.normal(k2, [3])
+        angles = list(jrnd.normal(k3, [2, 3]))
+        prop_rotating_weights(W, B, x, angles)
+
+
+# NOTE: THIS TAKES OVER TEN HOURS; use the above (identical but w/o shrinking) instead
+# @given(
+#     hnp.arrays(dtype=jnp.float32, shape=[layers, ndim, ndim]),
+#     hnp.arrays(dtype=jnp.float32, shape=[layers, ndim]),
+#     hnp.arrays(dtype=jnp.float32, shape=[ndim]),
+#     hnp.arrays(dtype=jnp.float32, shape=[layers, ndim]),
+# )
+# def test_rotating_weights_prop_1_layer(
+#     W: Array,
+#     B: Array,
+#     x: Array,
+#     angles: Array,
+# ):
+#     prop_rotating_weights(list(W), list(B), x, list(angles))
+
+
+# TODO: test varying dimensionality across layers

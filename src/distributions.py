@@ -1,5 +1,7 @@
+from nontest import jit
+
 from functools import partial
-from jax import Array, jit, numpy as jnp, scipy as jsp
+from jax import Array, numpy as jnp, scipy as jsp
 from jax.numpy import linalg as jla
 from jax.lax import cond
 
@@ -19,7 +21,7 @@ def normalize(x: Array, axis=None) -> Array:
 @jit
 def kabsch(to_be_rotated: Array, target: Array) -> Array:
     """
-    Kabsch's algorithm for rotating pairs of points to minimize post-rotation distance.
+    Kabsch's algorithm for (possibly improperly) rotating pairs of points to minimize post-rotation distance.
     Note that we do NOT perform the following steps of Kabsch's original algorithm:
     - Instead of centering both point-clouds at the origin, we leave them at their original positions,
       since points' relationship to the origin is meaningful.
@@ -44,7 +46,7 @@ def kabsch(to_be_rotated: Array, target: Array) -> Array:
 @jit
 def rotate_and_compare(actual: Array, ideal: Array) -> tuple[jnp.float32, Array]:
     """
-    Calculate a rotation matrix to get `actual` as close to `ideal` as possible
+    Calculate a (possibly improper) rotation matrix to get `actual` as close to `ideal` as possible
     (namely, the `R` that minimizes the norm of `(actual @ R) - ideal`)
     and return the norm we just minimized.
     Returns `(norm, ideal @ R, R)`

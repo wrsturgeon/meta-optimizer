@@ -1,3 +1,4 @@
-from jax import grad, jit, numpy as jnp, pmap, random as rnd, vmap
+from nontest import jit
+from jax import grad, numpy as jnp, pmap, random as rnd, vmap
 
 print("Hi!")
