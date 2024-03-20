@@ -1,12 +1,15 @@
 from nontest import jit
 
+from beartype import beartype
 from functools import partial
-from jax import Array, numpy as jnp, scipy as jsp
+from jax import numpy as jnp, scipy as jsp
 from jax.numpy import linalg as jla
 from jax.lax import cond
+from jaxtyping import jaxtyped, Array
 
 
 @partial(jit, static_argnames=["axis"])
+@jaxtyped(typechecker=beartype)
 def normalize(x: Array, axis=None) -> Array:
     """
     Normalize a distribution s.t.
@@ -19,6 +22,7 @@ def normalize(x: Array, axis=None) -> Array:
 
 
 @jit
+@jaxtyped(typechecker=beartype)
 def kabsch(to_be_rotated: Array, target: Array) -> Array:
     """
     Kabsch's algorithm for (possibly improperly) rotating pairs of points to minimize post-rotation distance.
@@ -44,6 +48,7 @@ def kabsch(to_be_rotated: Array, target: Array) -> Array:
 
 
 @jit
+@jaxtyped(typechecker=beartype)
 def rotate_and_compare(actual: Array, ideal: Array) -> tuple[jnp.float32, Array]:
     """
     Calculate a (possibly improper) rotation matrix to get `actual` as close to `ideal` as possible

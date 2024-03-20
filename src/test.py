@@ -1,11 +1,15 @@
-import distributions, feedforward
+import distributions, feedforward, permutations
 
+from beartype import beartype
 from hypothesis import given, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
-from jax import Array, nn as jnn, numpy as jnp, random as jrnd
+from jax import nn as jnn, numpy as jnp, random as jrnd
 from jax.numpy import linalg as jla
+from jaxtyping import jaxtyped, Array, TypeCheckError
 from math import prod
+from numpy.typing import ArrayLike
 from os import environ
+import pytest
 
 
 TEST_COUNT_CI = 10000
@@ -37,6 +41,7 @@ else:
     TEST_COUNT = TEST_COUNT_NORMAL
 
 
+@jaxtyped(typechecker=beartype)
 def prop_normalize_no_axis(x: Array):
     if x.size == 0 or not jnp.all(jnp.isfinite(x)):
         return
@@ -50,11 +55,13 @@ def prop_normalize_no_axis(x: Array):
 
 
 @given(hnp.arrays(dtype=jnp.float32, shape=[3, 3, 3]))
-def test_normalize_no_axis_prop(x: Array):
-    prop_normalize_no_axis(x)
+@jaxtyped(typechecker=beartype)
+def test_normalize_no_axis_prop(x: ArrayLike):
+    prop_normalize_no_axis(jnp.array(x))
 
 
 # Identical to the above, except along one specific axis
+@jaxtyped(typechecker=beartype)
 def prop_normalize_with_axis(x: Array, axis: int):
     assert 0 <= axis < x.ndim
     if not (jnp.isfinite(jnp.mean(x)) and jnp.isfinite(jnp.std(x))):
@@ -71,14 +78,17 @@ def prop_normalize_with_axis(x: Array, axis: int):
     assert jnp.all(good)
 
 
+@jaxtyped(typechecker=beartype)
 def test_normalize_with_axis_1():
     prop_normalize_with_axis(jnp.zeros([3, 3, 3]), axis=1)
 
 
+@jaxtyped(typechecker=beartype)
 def test_normalize_with_axis_2():
     prop_normalize_with_axis(jnp.ones([3, 3, 3]), axis=0)
 
 
+@jaxtyped(typechecker=beartype)
 def test_normalize_with_axis_3():
     prop_normalize_with_axis(
         x=jnp.array(
@@ -105,6 +115,7 @@ def test_normalize_with_axis_3():
     )
 
 
+@jaxtyped(typechecker=beartype)
 def test_normalize_with_axis_4():
     prop_normalize_with_axis(
         x=jnp.array(
@@ -120,10 +131,12 @@ def test_normalize_with_axis_4():
 
 
 @given(hnp.arrays(dtype=jnp.float32, shape=[3, 3, 3]), st.integers(0, 2))
-def test_normalize_with_axis_prop(x: Array, axis: int):
-    prop_normalize_with_axis(x, axis=axis)
+@jaxtyped(typechecker=beartype)
+def test_normalize_with_axis_prop(x: ArrayLike, axis: int):
+    prop_normalize_with_axis(jnp.array(x), axis=axis)
 
 
+@jaxtyped(typechecker=beartype)
 def prop_kabsch(to_be_rotated: Array, target: Array):
     norm1 = jla.norm(to_be_rotated)
     norm2 = jla.norm(target)
@@ -146,24 +159,29 @@ def prop_kabsch(to_be_rotated: Array, target: Array):
     assert jnp.all(loss < 0.01)
 
 
+@jaxtyped(typechecker=beartype)
 def test_kabsch_1():
     eye = jnp.eye(1, 4).reshape(1, 1, 4)
     actual = distributions.kabsch(eye, eye)
     assert jnp.allclose(actual, jnp.eye(4, 4).reshape(1, 4, 4))
 
 
+@jaxtyped(typechecker=beartype)
 def test_kabsch_2():
     prop_kabsch(jnp.array([[[1, 0, 0, 0]]]), jnp.array([[[0, 1, 0, 0]]]))
 
 
+@jaxtyped(typechecker=beartype)
 def test_kabsch_3():
     prop_kabsch(jnp.ones([1, 1, 4]), jnp.ones([1, 1, 4]))
 
 
+@jaxtyped(typechecker=beartype)
 def test_kabsch_4():
     prop_kabsch(jnp.ones([1, 1, 4]), jnp.array([[[0, 1, 1, 1]]]))
 
 
+@jaxtyped(typechecker=beartype)
 def test_kabsch_5():
     prop_kabsch(
         to_be_rotated=jnp.array([[[1, 1, 1, 1]]], dtype=jnp.float32),
@@ -177,18 +195,30 @@ def test_kabsch_5():
     hnp.arrays(dtype=jnp.float32, shape=[1, 1, 4]),
     hnp.arrays(dtype=jnp.float32, shape=[1, 1, 4]),
 )
-def test_kabsch_prop(to_be_rotated: Array, target: Array):
-    prop_kabsch(to_be_rotated, target)
+@jaxtyped(typechecker=beartype)
+def test_kabsch_prop(to_be_rotated: ArrayLike, target: ArrayLike):
+    prop_kabsch(jnp.array(to_be_rotated), jnp.array(target))
 
 
 @given(hnp.arrays(dtype=jnp.float32, shape=[3, 3]))
-def test_feedforward_id_prop(x):
+@jaxtyped(typechecker=beartype)
+def test_feedforward_id_prop(np_x: ArrayLike):
+    x = jnp.array(np_x)
     if not jnp.all(jnp.isfinite(x)):
         return
     y = feedforward.feedforward([jnp.eye(3, 3)], [jnp.zeros([3, 3])], x, nl=lambda z: z)
     assert jnp.allclose(y, x)
 
 
+# NOTE: The big problem with using rotation matrices is that,
+# with practically all nonlinearities (e.g. ReLU or GELU),
+# negative values are effectively eliminated whereas
+# positive values are allowed to pass effectively unchanged.
+# Rotation matrices use negative values extensively, but
+# negation significantly (very significantly!) alters behavior.
+
+
+@jaxtyped(typechecker=beartype)
 def test_feedforward_init_1():
     W, B = feedforward.feedforward_init([5, 42, 3, 8, 7], jrnd.PRNGKey(42))
     y = feedforward.feedforward(W, B, jnp.ones([5]))
@@ -208,26 +238,25 @@ def test_feedforward_init_1():
     )
 
 
+@jaxtyped(typechecker=beartype)
 def prop_rotating_weights(
-    W: Array,
-    B: Array,
+    W: list[Array],
+    B: list[Array],
     x: Array,
-    angles: Array,
+    angles: list[Array],
 ):
-    assert isinstance(W, list)
-    assert isinstance(B, list)
-    assert isinstance(angles, list)
     assert len(angles) == len(W)
     if not all([jnp.all(jnp.isfinite(angle)) for angle in angles]):
         return
-    angles = jnp.array(angles)[:, jnp.newaxis]
-    R = list(distributions.kabsch(angles[:-1], angles[1:]))  # batched!
+    angle_array = jnp.array(angles)[:, jnp.newaxis]
+    R = list(distributions.kabsch(angle_array[:-1], angle_array[1:]))  # batched!
     WR, BR = feedforward.rotate_weights(W, B, R)
     y = feedforward.feedforward(W, B, x, nl=lambda z: z)
     yR = feedforward.feedforward(WR, BR, x, nl=lambda z: z)
     assert jnp.allclose(y, yR)
 
 
+@jaxtyped(typechecker=beartype)
 def test_rotating_weights_1():
     prop_rotating_weights(
         [jnp.eye(3, 3)],
@@ -237,6 +266,7 @@ def test_rotating_weights_1():
     )
 
 
+@jaxtyped(typechecker=beartype)
 def test_rotating_weights_2():
     prop_rotating_weights(
         [jnp.eye(3, 3), jnp.eye(3, 3)],
@@ -246,6 +276,7 @@ def test_rotating_weights_2():
     )
 
 
+@jaxtyped(typechecker=beartype)
 def test_rotating_weights_3():
     prop_rotating_weights(
         W=list(jnp.ones([2, 3, 3])),
@@ -255,6 +286,7 @@ def test_rotating_weights_3():
     )
 
 
+@jaxtyped(typechecker=beartype)
 def test_rotating_weights_prop_fake():
     for seed in range(TEST_COUNT):
         k1, k2, k3 = jrnd.split(jrnd.PRNGKey(seed), 3)
@@ -284,6 +316,7 @@ def test_rotating_weights_prop_fake():
 # TODO: test varying dimensionality across layers
 
 
+@jaxtyped(typechecker=beartype)
 def prop_permutation_conjecture(r1: Array, r2: Array):
     # these lines (this comment +/- 1) are effectively just
     # generating a random rotation matrix stored in `R`
@@ -308,6 +341,7 @@ def prop_permutation_conjecture(r1: Array, r2: Array):
 
 
 # Turns out the above does not hold:
+@jaxtyped(typechecker=beartype)
 def test_permutation_conjecture_disproven():
     r1 = jnp.array([[[0.21653588, -0.6419788, 1.1067219]]], dtype=jnp.float32)
     r2 = jnp.array([[[-0.9220991, 2.6091485, -1.3119074]]], dtype=jnp.float32)
@@ -321,3 +355,38 @@ def test_permutation_conjecture_disproven():
 # TODO: Write a 2^n-time ( :( ) checker for the above,
 # keeping track of a running best-so-far and its score,
 # then see how long it actually takes.
+
+
+@jaxtyped(typechecker=beartype)
+def test_permute_1():
+    x = jnp.array(
+        [
+            [1, 0, 0, 0, 0],
+            [0, 2, 0, 0, 0],
+            [0, 0, 3, 0, 0],
+            [0, 0, 0, 4, 0],
+            [0, 0, 0, 0, 5],
+        ],
+        dtype=jnp.float32,
+    )
+    i = jnp.array([3, 1, 4, 2, 0], dtype=jnp.uint)
+    y = permutations.permute(x, i)
+    assert jnp.allclose(
+        y,
+        jnp.array(
+            [
+                [0, 0, 0, 4, 0],
+                [0, 2, 0, 0, 0],
+                [0, 0, 0, 0, 5],
+                [0, 0, 3, 0, 0],
+                [1, 0, 0, 0, 0],
+            ]
+        ),
+    )
+
+
+def test_permute_typechecking():
+    x = jnp.eye(5, 5, dtype=jnp.float32)
+    i = jnp.array(range(6), dtype=jnp.uint)
+    with pytest.raises(TypeCheckError):
+        permutations.permute(x, i)

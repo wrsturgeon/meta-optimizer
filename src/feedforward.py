@@ -1,17 +1,22 @@
 from nontest import jit
 
+from beartype import beartype
+from beartype.typing import Callable
 from functools import partial
-from jax import Array, nn as jnn, numpy as jnp, random as jrnd
+from jax import nn as jnn, numpy as jnp, random as jrnd
 from jax.numpy import linalg as jla
-from typing import Callable
+from jaxtyping import jaxtyped, Array
+
+KeyArray = Array  # for now: <https://github.com/google/jax/issues/12706>
 
 
 @partial(jit, static_argnames=["nl"])
+@jaxtyped(typechecker=beartype)
 def feedforward(
     W: list[Array],
     B: list[Array],
     x: Array,
-    nl: Callable[Array, Array] = jnn.gelu,
+    nl: Callable[[Array], Array] = jnn.gelu,
 ) -> Array:
     n = len(W)
     assert n == len(B)
@@ -21,9 +26,10 @@ def feedforward(
 
 
 # shouldn't be JITted b/c only run once
+@jaxtyped(typechecker=beartype)
 def feedforward_init(
     sizes: list[int],
-    key: jrnd.PRNGKey,
+    key: KeyArray,
 ) -> tuple[list[Array], list[Array]]:
     n = len(sizes)
     W = []
@@ -37,6 +43,7 @@ def feedforward_init(
 
 
 @jit
+@jaxtyped(typechecker=beartype)
 def rotate_weights(
     W: list[Array],
     B: list[Array],
