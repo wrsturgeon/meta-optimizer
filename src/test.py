@@ -222,16 +222,9 @@ def prop_rotating_weights(
         return
     angles = jnp.array(angles)[:, jnp.newaxis]
     R = list(distributions.kabsch(angles[:-1], angles[1:]))  # batched!
-    print(f"R: {R}")
     WR, BR = feedforward.rotate_weights(W, B, R)
-    print(f"W: {W}")
-    print(f"B: {B}")
-    print(f"WR: {WR}")
-    print(f"BR: {BR}")
     y = feedforward.feedforward(W, B, x, nl=lambda z: z)
     yR = feedforward.feedforward(WR, BR, x, nl=lambda z: z)
-    print(f"y: {y}")
-    print(f"yR: {yR}")
     assert jnp.allclose(y, yR)
 
 
@@ -264,7 +257,6 @@ def test_rotating_weights_3():
 
 def test_rotating_weights_prop_fake():
     for seed in range(TEST_COUNT):
-        print()
         k1, k2, k3 = jrnd.split(jrnd.PRNGKey(seed), 3)
         W = list(jnn.initializers.he_normal()(k1, [2, 3, 3]))
         B = list(jnp.zeros([2, 3]))
@@ -290,3 +282,42 @@ def test_rotating_weights_prop_fake():
 
 
 # TODO: test varying dimensionality across layers
+
+
+def prop_permutation_conjecture(r1: Array, r2: Array):
+    # these lines (this comment +/- 1) are effectively just
+    # generating a random rotation matrix stored in `R`
+    R = distributions.kabsch(r1, r2)
+    assert R.shape[0] == 1
+    R = R[0]
+
+    # now that we have a rotation matrix,
+    # can we obtain the closest permutation matrix
+    # by simply taking the maximum along each row/column?
+    # test whether row/column methods match, which would imply the above:
+    Rabs = jnp.abs(R)
+    outputs = []
+    for axis in range(R.ndim):
+        outputs.append(
+            jnn.one_hot(jnp.argmax(Rabs, axis=axis), R.shape[axis], axis=axis)
+        )
+        assert outputs[-1].shape == R.shape
+    for output in outputs:
+        for cmp in outputs:
+            assert jnp.allclose(output, cmp)
+
+
+# Turns out the above does not hold:
+def test_permutation_conjecture_disproven():
+    r1 = jnp.array([[[0.21653588, -0.6419788, 1.1067219]]], dtype=jnp.float32)
+    r2 = jnp.array([[[-0.9220991, 2.6091485, -1.3119074]]], dtype=jnp.float32)
+    try:
+        prop_permutation_conjecture(r1, r2)
+        raise
+    except:
+        return
+
+
+# TODO: Write a 2^n-time ( :( ) checker for the above,
+# keeping track of a running best-so-far and its score,
+# then see how long it actually takes.
