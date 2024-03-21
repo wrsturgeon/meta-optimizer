@@ -5,12 +5,12 @@ from functools import partial
 from jax import numpy as jnp, scipy as jsp
 from jax.numpy import linalg as jla
 from jax.lax import cond
-from jaxtyping import jaxtyped, Array
+from jaxtyping import jaxtyped, Array, Float
 
 
 @partial(jit, static_argnames=["axis"])
 @jaxtyped(typechecker=beartype)
-def normalize(x: Array, axis=None) -> Array:
+def normalize(x: Float[Array, "..."], axis=None) -> Array:
     """
     Normalize a distribution s.t.
     each row (i.e., each index along the last axis)
@@ -23,7 +23,10 @@ def normalize(x: Array, axis=None) -> Array:
 
 @jit
 @jaxtyped(typechecker=beartype)
-def kabsch(to_be_rotated: Array, target: Array) -> Array:
+def kabsch(
+    to_be_rotated: Float[Array, "batch points values"],
+    target: Float[Array, "batch points values"],
+) -> Array:
     """
     Kabsch's algorithm for (possibly improperly) rotating pairs of points to minimize post-rotation distance.
     Note that we do NOT perform the following steps of Kabsch's original algorithm:
@@ -49,7 +52,10 @@ def kabsch(to_be_rotated: Array, target: Array) -> Array:
 
 @jit
 @jaxtyped(typechecker=beartype)
-def rotate_and_compare(actual: Array, ideal: Array) -> tuple[jnp.float32, Array]:
+def rotate_and_compare(
+    actual: Float[Array, "batch points values"],
+    ideal: Float[Array, "batch points values"],
+) -> tuple[jnp.float32, Array]:
     """
     Calculate a (possibly improper) rotation matrix to get `actual` as close to `ideal` as possible
     (namely, the `R` that minimizes the norm of `(actual @ R) - ideal`)

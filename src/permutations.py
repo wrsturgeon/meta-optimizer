@@ -20,10 +20,10 @@ def permute(x: Float[Array, "n ..."], indices: UInt[Array, "n"]) -> Array:
 @jit
 @jaxtyped(typechecker=beartype)
 def score(
-    Wactual: list[Array],
-    Bactual: list[Array],
-    Wideal: list[Array],
-    Bideal: list[Array],
+    Wactual: list[Float[Array, "..."]],
+    Bactual: list[Float[Array, "..."]],
+    Wideal: list[Float[Array, "..."]],
+    Bideal: list[Float[Array, "..."]],
     permutations: list[list[int]],
 ) -> jnp.float32:
     DOF = len(permutations)
@@ -41,10 +41,10 @@ def score(
 @jit
 @jaxtyped(typechecker=beartype)
 def find_layer_wise_permutations(
-    Wactual: list[Array],
-    Bactual: list[Array],
-    Wideal: list[Array],
-    Bideal: list[Array],
+    Wactual: list[Float[Array, "..."]],
+    Bactual: list[Float[Array, "..."]],
+    Wideal: list[Float[Array, "..."]],
+    Bideal: list[Float[Array, "..."]],
     last_best: list[list[int]],
 ) -> tuple[list[list[int]], jnp.float32]:
     """

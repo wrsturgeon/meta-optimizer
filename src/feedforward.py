@@ -5,7 +5,7 @@ from beartype.typing import Callable
 from functools import partial
 from jax import nn as jnn, numpy as jnp, random as jrnd
 from jax.numpy import linalg as jla
-from jaxtyping import jaxtyped, Array
+from jaxtyping import jaxtyped, Array, Float
 
 KeyArray = Array  # for now: <https://github.com/google/jax/issues/12706>
 
@@ -13,11 +13,11 @@ KeyArray = Array  # for now: <https://github.com/google/jax/issues/12706>
 @partial(jit, static_argnames=["nl"])
 @jaxtyped(typechecker=beartype)
 def feedforward(
-    W: list[Array],
-    B: list[Array],
+    W: list[Float[Array, "..."]],
+    B: list[Float[Array, "..."]],
     x: Array,
-    nl: Callable[[Array], Array] = jnn.gelu,
-) -> Array:
+    nl: Callable[[Float[Array, "..."]], Float[Array, "..."]] = jnn.gelu,
+) -> Float[Array, "..."]:
     n = len(W)
     assert n == len(B)
     for i in range(n):
@@ -30,7 +30,7 @@ def feedforward(
 def feedforward_init(
     sizes: list[int],
     key: KeyArray,
-) -> tuple[list[Array], list[Array]]:
+) -> tuple[list[Float[Array, "..."]], list[Float[Array, "..."]]]:
     n = len(sizes)
     W = []
     B = []
@@ -45,9 +45,9 @@ def feedforward_init(
 @jit
 @jaxtyped(typechecker=beartype)
 def rotate_weights(
-    W: list[Array],
-    B: list[Array],
-    R: list[Array],
+    W: list[Float[Array, "..."]],
+    B: list[Float[Array, "..."]],
+    R: list[Float[Array, "..."]],
 ) -> tuple[list[Array], list[Array]]:
     assert isinstance(W, list)
     assert isinstance(B, list)

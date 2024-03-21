@@ -5,7 +5,7 @@ from hypothesis import given, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
 from jax import nn as jnn, numpy as jnp, random as jrnd
 from jax.numpy import linalg as jla
-from jaxtyping import jaxtyped, Array, TypeCheckError
+from jaxtyping import jaxtyped, Array, Float, TypeCheckError
 from math import prod
 from numpy.typing import ArrayLike
 from os import environ
@@ -42,7 +42,7 @@ else:
 
 
 @jaxtyped(typechecker=beartype)
-def prop_normalize_no_axis(x: Array):
+def prop_normalize_no_axis(x: Float[Array, "..."]):
     if x.size == 0 or not jnp.all(jnp.isfinite(x)):
         return
     # Standard deviation is subject to (significant!) numerical error, so
@@ -62,7 +62,7 @@ def test_normalize_no_axis_prop(x: ArrayLike):
 
 # Identical to the above, except along one specific axis
 @jaxtyped(typechecker=beartype)
-def prop_normalize_with_axis(x: Array, axis: int):
+def prop_normalize_with_axis(x: Float[Array, "..."], axis: int):
     assert 0 <= axis < x.ndim
     if not (jnp.isfinite(jnp.mean(x)) and jnp.isfinite(jnp.std(x))):
         return
@@ -137,7 +137,8 @@ def test_normalize_with_axis_prop(x: ArrayLike, axis: int):
 
 
 @jaxtyped(typechecker=beartype)
-def prop_kabsch(to_be_rotated: Array, target: Array):
+def prop_kabsch(to_be_rotated: Float[Array, "..."], target: Float[Array, "..."]):
+    assert to_be_rotated.shape == target.shape
     norm1 = jla.norm(to_be_rotated)
     norm2 = jla.norm(target)
     if (
@@ -168,7 +169,10 @@ def test_kabsch_1():
 
 @jaxtyped(typechecker=beartype)
 def test_kabsch_2():
-    prop_kabsch(jnp.array([[[1, 0, 0, 0]]]), jnp.array([[[0, 1, 0, 0]]]))
+    prop_kabsch(
+        jnp.array([[[1, 0, 0, 0]]], dtype=jnp.float32),
+        jnp.array([[[0, 1, 0, 0]]], dtype=jnp.float32),
+    )
 
 
 @jaxtyped(typechecker=beartype)
@@ -178,7 +182,7 @@ def test_kabsch_3():
 
 @jaxtyped(typechecker=beartype)
 def test_kabsch_4():
-    prop_kabsch(jnp.ones([1, 1, 4]), jnp.array([[[0, 1, 1, 1]]]))
+    prop_kabsch(jnp.ones([1, 1, 4]), jnp.array([[[0, 1, 1, 1]]], dtype=jnp.float32))
 
 
 @jaxtyped(typechecker=beartype)
@@ -240,10 +244,10 @@ def test_feedforward_init_1():
 
 @jaxtyped(typechecker=beartype)
 def prop_rotating_weights(
-    W: list[Array],
-    B: list[Array],
+    W: list[Float[Array, "..."]],
+    B: list[Float[Array, "..."]],
     x: Array,
-    angles: list[Array],
+    angles: list[Float[Array, "..."]],
 ):
     assert len(angles) == len(W)
     if not all([jnp.all(jnp.isfinite(angle)) for angle in angles]):
@@ -262,7 +266,7 @@ def test_rotating_weights_1():
         [jnp.eye(3, 3)],
         [jnp.eye(1, 3)[0]],
         jnp.eye(1, 3)[0],
-        [jnp.array([1, 0, 0])],
+        [jnp.array([1, 0, 0], dtype=jnp.float32)],
     )
 
 
@@ -272,7 +276,10 @@ def test_rotating_weights_2():
         [jnp.eye(3, 3), jnp.eye(3, 3)],
         [jnp.eye(1, 3)[0], jnp.eye(1, 3)[0]],
         jnp.eye(1, 3)[0],
-        [jnp.array([1, 0, 0]), jnp.array([0, 1, 0])],
+        [
+            jnp.array([1, 0, 0], dtype=jnp.float32),
+            jnp.array([0, 1, 0], dtype=jnp.float32),
+        ],
     )
 
 
@@ -282,7 +289,10 @@ def test_rotating_weights_3():
         W=list(jnp.ones([2, 3, 3])),
         B=list(jnp.zeros([2, 3])),
         x=jnp.ones([3]),
-        angles=[jnp.array([0.0, 1.0, 1.0]), jnp.array([1.0, 1.0, 1.0])],
+        angles=[
+            jnp.array([0.0, 1.0, 1.0], dtype=jnp.float32),
+            jnp.array([1.0, 1.0, 1.0], dtype=jnp.float32),
+        ],
     )
 
 
@@ -317,7 +327,7 @@ def test_rotating_weights_prop_fake():
 
 
 @jaxtyped(typechecker=beartype)
-def prop_permutation_conjecture(r1: Array, r2: Array):
+def prop_permutation_conjecture(r1: Float[Array, "n"], r2: Float[Array, "n"]):
     # these lines (this comment +/- 1) are effectively just
     # generating a random rotation matrix stored in `R`
     R = distributions.kabsch(r1, r2)
