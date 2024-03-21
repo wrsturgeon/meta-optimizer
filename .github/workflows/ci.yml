@@ -19,6 +19,8 @@ jobs:
       with:
         use_nix_profile: true
         nix_channel: nixpkgs
+    - name: mypy .
+      run: mypy .
     - name: nix build
       run: nix build
     - name: nix run
@@ -39,6 +41,8 @@ jobs:
       with:
         use_nix_profile: true
         nix_channel: nixpkgs
+    - name: mypy .
+      run: mypy .
     - name: nix build
       run: nix build
     - name: nix run

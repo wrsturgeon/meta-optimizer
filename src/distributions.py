@@ -24,16 +24,16 @@ def normalize(x: Float[Array, "..."], axis=None) -> Array:
 @jit
 @jaxtyped(typechecker=beartype)
 def kabsch(
-    to_be_rotated: Float[Array, "batch points values"],
-    target: Float[Array, "batch points values"],
-) -> Array:
+    to_be_rotated: Float[Array, "batch points ndim"],
+    target: Float[Array, "batch points ndim"],
+) -> Float[Array, "batch ndim ndim"]:
     """
     Kabsch's algorithm for (possibly improperly) rotating pairs of points to minimize post-rotation distance.
     Note that we do NOT perform the following steps of Kabsch's original algorithm:
     - Instead of centering both point-clouds at the origin, we leave them at their original positions,
       since points' relationship to the origin is meaningful.
     - The final "rotation matrix" need not be a (right-handed) rotation matrix:
-      if axes are negated outside a usual rotation, this is fine,
+      if ndim are negated outside a usual rotation, this is fine,
       as long as they are consistently negated throughout (later, outside this function).
     Example use:
     ```python
@@ -43,7 +43,7 @@ def kabsch(
     """
     assert (
         to_be_rotated.ndim == 3
-    ), "Please send 3-axis tensors to `kabsch`: (batch, points, values)"
+    ), "Please send 3-axis tensors to `kabsch`: (batch, points, ndim)"
     assert to_be_rotated.shape == target.shape
     covariance = to_be_rotated.transpose(0, 2, 1) @ target
     u, _, vT = jla.svd(covariance)
@@ -53,9 +53,13 @@ def kabsch(
 @jit
 @jaxtyped(typechecker=beartype)
 def rotate_and_compare(
-    actual: Float[Array, "batch points values"],
-    ideal: Float[Array, "batch points values"],
-) -> tuple[jnp.float32, Array]:
+    actual: Float[Array, "batch points ndim"],
+    ideal: Float[Array, "batch points ndim"],
+) -> tuple[
+    jnp.float32,
+    Float[Array, "batch points ndim"],
+    Float[Array, "batch ndim ndim"],
+]:
     """
     Calculate a (possibly improper) rotation matrix to get `actual` as close to `ideal` as possible
     (namely, the `R` that minimizes the norm of `(actual @ R) - ideal`)

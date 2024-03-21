@@ -54,7 +54,7 @@ def prop_normalize_no_axis(x: Float[Array, "..."]):
         assert jnp.abs(jnp.std(y) - 1) < 0.01
 
 
-@given(hnp.arrays(dtype=jnp.float32, shape=[3, 3, 3]))
+@given(hnp.arrays(dtype=jnp.float32, shape=(3, 3, 3)))
 @jaxtyped(typechecker=beartype)
 def test_normalize_no_axis_prop(x: ArrayLike):
     prop_normalize_no_axis(jnp.array(x))
@@ -130,7 +130,7 @@ def test_normalize_with_axis_4():
     )
 
 
-@given(hnp.arrays(dtype=jnp.float32, shape=[3, 3, 3]), st.integers(0, 2))
+@given(hnp.arrays(dtype=jnp.float32, shape=(3, 3, 3)), st.integers(0, 2))
 @jaxtyped(typechecker=beartype)
 def test_normalize_with_axis_prop(x: ArrayLike, axis: int):
     prop_normalize_with_axis(jnp.array(x), axis=axis)
@@ -196,15 +196,15 @@ def test_kabsch_5():
 
 
 @given(
-    hnp.arrays(dtype=jnp.float32, shape=[1, 1, 4]),
-    hnp.arrays(dtype=jnp.float32, shape=[1, 1, 4]),
+    hnp.arrays(dtype=jnp.float32, shape=(1, 1, 4)),
+    hnp.arrays(dtype=jnp.float32, shape=(1, 1, 4)),
 )
 @jaxtyped(typechecker=beartype)
 def test_kabsch_prop(to_be_rotated: ArrayLike, target: ArrayLike):
     prop_kabsch(jnp.array(to_be_rotated), jnp.array(target))
 
 
-@given(hnp.arrays(dtype=jnp.float32, shape=[3, 3]))
+@given(hnp.arrays(dtype=jnp.float32, shape=(3, 3)))
 @jaxtyped(typechecker=beartype)
 def test_feedforward_id_prop(np_x: ArrayLike):
     x = jnp.array(np_x)
@@ -309,10 +309,10 @@ def test_rotating_weights_prop_fake():
 
 # NOTE: THIS TAKES OVER TEN HOURS; use the above (identical but w/o shrinking) instead
 # @given(
-#     hnp.arrays(dtype=jnp.float32, shape=[layers, ndim, ndim]),
-#     hnp.arrays(dtype=jnp.float32, shape=[layers, ndim]),
-#     hnp.arrays(dtype=jnp.float32, shape=[ndim]),
-#     hnp.arrays(dtype=jnp.float32, shape=[layers, ndim]),
+#     hnp.arrays(dtype=jnp.float32, shape=(layers, ndim, ndim)),
+#     hnp.arrays(dtype=jnp.float32, shape=(layers, ndim)),
+#     hnp.arrays(dtype=jnp.float32, shape=(ndim)),
+#     hnp.arrays(dtype=jnp.float32, shape=(layers, ndim)),
 # )
 # def test_rotating_weights_prop_1_layer(
 #     W: Array,
