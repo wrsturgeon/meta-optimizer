@@ -210,7 +210,7 @@ def test_feedforward_id_prop(np_x: ArrayLike):
     x = jnp.array(np_x)
     if not jnp.all(jnp.isfinite(x)):
         return
-    y = feedforward.feedforward([jnp.eye(3, 3)], [jnp.zeros([3, 3])], x, nl=lambda z: z)
+    y = feedforward.feedforward([jnp.eye(3, 3)], [jnp.zeros([3])], x, nl=lambda z: z)
     assert jnp.allclose(y, x)
 
 
@@ -225,7 +225,7 @@ def test_feedforward_id_prop(np_x: ArrayLike):
 @jaxtyped(typechecker=beartype)
 def test_feedforward_init_1():
     W, B = feedforward.feedforward_init([5, 42, 3, 8, 7], jrnd.PRNGKey(42))
-    y = feedforward.feedforward(W, B, jnp.ones([5]))
+    y = feedforward.feedforward(W, B, jnp.ones([1, 5]), nl=jnn.gelu)
     assert jnp.allclose(
         y,
         jnp.array(
@@ -246,7 +246,7 @@ def test_feedforward_init_1():
 def prop_rotating_weights(
     W: list[Float[Array, "..."]],
     B: list[Float[Array, "..."]],
-    x: Array,
+    x: Float[Array, "batch ndim"],
     angles: list[Float[Array, "..."]],
 ):
     assert len(angles) == len(W)
@@ -265,7 +265,7 @@ def test_rotating_weights_1():
     prop_rotating_weights(
         [jnp.eye(3, 3)],
         [jnp.eye(1, 3)[0]],
-        jnp.eye(1, 3)[0],
+        jnp.eye(3, 3),
         [jnp.array([1, 0, 0], dtype=jnp.float32)],
     )
 
@@ -275,7 +275,7 @@ def test_rotating_weights_2():
     prop_rotating_weights(
         [jnp.eye(3, 3), jnp.eye(3, 3)],
         [jnp.eye(1, 3)[0], jnp.eye(1, 3)[0]],
-        jnp.eye(1, 3)[0],
+        jnp.eye(3, 3),
         [
             jnp.array([1, 0, 0], dtype=jnp.float32),
             jnp.array([0, 1, 0], dtype=jnp.float32),
@@ -288,7 +288,7 @@ def test_rotating_weights_3():
     prop_rotating_weights(
         W=list(jnp.ones([2, 3, 3])),
         B=list(jnp.zeros([2, 3])),
-        x=jnp.ones([3]),
+        x=jnp.ones([1, 3]),
         angles=[
             jnp.array([0.0, 1.0, 1.0], dtype=jnp.float32),
             jnp.array([1.0, 1.0, 1.0], dtype=jnp.float32),
@@ -302,7 +302,7 @@ def test_rotating_weights_prop_fake():
         k1, k2, k3 = jrnd.split(jrnd.PRNGKey(seed), 3)
         W = list(jnn.initializers.he_normal()(k1, [2, 3, 3]))
         B = list(jnp.zeros([2, 3]))
-        x = jrnd.normal(k2, [3])
+        x = jrnd.normal(k2, [3, 3])
         angles = list(jrnd.normal(k3, [2, 3]))
         prop_rotating_weights(W, B, x, angles)
 
@@ -380,7 +380,7 @@ def test_permute_1():
         dtype=jnp.float32,
     )
     i = jnp.array([3, 1, 4, 2, 0], dtype=jnp.uint)
-    y = permutations.permute(x, i)
+    y = permutations.permute(x, i, axis=0)
     assert jnp.allclose(
         y,
         jnp.array(
@@ -395,8 +395,70 @@ def test_permute_1():
     )
 
 
-def test_permute_typechecking():
+@jaxtyped(typechecker=beartype)
+def test_permute_2():
+    x = jnp.array(
+        [
+            [1, 0, 0, 0, 0],
+            [0, 2, 0, 0, 0],
+            [0, 0, 3, 0, 0],
+            [0, 0, 0, 4, 0],
+            [0, 0, 0, 0, 5],
+        ],
+        dtype=jnp.float32,
+    )
+    i = jnp.array([3, 1, 4, 2, 0], dtype=jnp.uint)
+    y = permutations.permute(x, i, axis=1)
+    assert jnp.allclose(
+        y,
+        jnp.array(
+            [
+                [0, 0, 0, 0, 1],
+                [0, 2, 0, 0, 0],
+                [0, 0, 0, 3, 0],
+                [4, 0, 0, 0, 0],
+                [0, 0, 5, 0, 0],
+            ]
+        ),
+    )
+
+
+@jaxtyped(typechecker=beartype)
+def test_permute_size_check():
     x = jnp.eye(5, 5, dtype=jnp.float32)
     i = jnp.array(range(6), dtype=jnp.uint)
-    with pytest.raises(TypeCheckError):
-        permutations.permute(x, i)
+    with pytest.raises(AssertionError):
+        permutations.permute(x, i, axis=0)
+
+
+@jaxtyped(typechecker=beartype)
+def test_permute_axis_check():
+    x = jnp.eye(5, 5, dtype=jnp.float32)
+    i = jnp.array(range(5), dtype=jnp.uint)
+    with pytest.raises(IndexError):
+        permutations.permute(x, i, axis=5)
+
+
+# @jaxtyped(typechecker=beartype)
+# def prop_permutation_net_id(
+#     perms: list[list[int]],
+#     W: Float[Array, "layers ndim ndim"],
+#     B: Float[Array, "layers ndim"],
+#     x: Float[Array, "ndim"],
+# ):
+#     y = x
+#     for perm in perms:
+#         y = permutations.permute(x, perm, axis=0)
+#     assert jnp.allclose(y, x)
+#
+#
+# @given(
+#     st.permutations(range(5)),
+#     st.permutations(range(5)),
+#     st.permutations(range(5)),
+# )
+# @jaxtyped(typechecker=beartype)
+# def test_permutation_net_id_prop(
+#     p1: list[int], p2: list[int], p3: list[int], W: Float[Array, "3 5 5"]
+# ):
+#     raise NotImplementedError()

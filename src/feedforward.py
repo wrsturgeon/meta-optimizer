@@ -5,9 +5,9 @@ from beartype.typing import Callable
 from functools import partial
 from jax import nn as jnn, numpy as jnp, random as jrnd
 from jax.numpy import linalg as jla
-from jaxtyping import jaxtyped, Array, Float
+from jaxtyping import jaxtyped, Array, Float, UInt
 
-KeyArray = Array  # for now: <https://github.com/google/jax/issues/12706>
+KeyArray = UInt[Array, "n"]  # for now: <https://github.com/google/jax/issues/12706>
 
 
 @partial(jit, static_argnames=["nl"])
@@ -15,14 +15,19 @@ KeyArray = Array  # for now: <https://github.com/google/jax/issues/12706>
 def feedforward(
     W: list[Float[Array, "..."]],
     B: list[Float[Array, "..."]],
-    x: Array,
-    nl: Callable[[Float[Array, "..."]], Float[Array, "..."]] = jnn.gelu,
-) -> Float[Array, "..."]:
+    x: Float[Array, "batch n_in"],
+    nl: Callable[[Float[Array, "..."]], Float[Array, "..."]],  # = jnn.gelu,
+) -> Float[Array, "batch n_out"]:
+    assert x.ndim == 2
+    batch, ndim_in = x.shape
+    x = x[..., jnp.newaxis]
+    assert x.shape == (batch, ndim_in, 1)
     n = len(W)
     assert n == len(B)
     for i in range(n):
-        x = nl((W[i] @ x) + B[i])
-    return x
+        x = nl((W[i] @ x) + B[i][jnp.newaxis, ..., jnp.newaxis])
+    assert x.shape[-1] == 1
+    return x[..., 0]
 
 
 # shouldn't be JITted b/c only run once
@@ -48,7 +53,7 @@ def rotate_weights(
     W: list[Float[Array, "..."]],
     B: list[Float[Array, "..."]],
     R: list[Float[Array, "..."]],
-) -> tuple[list[Array], list[Array]]:
+) -> tuple[list[Float[Array, "..."]], list[Float[Array, "..."]]]:
     assert isinstance(W, list)
     assert isinstance(B, list)
     assert isinstance(R, list)

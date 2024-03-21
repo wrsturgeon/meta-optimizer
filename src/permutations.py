@@ -5,16 +5,23 @@ from jax import numpy as jnp
 from jaxtyping import jaxtyped, Array, Float, UInt
 
 
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# TODO:
+# Instead of reversing the permutations on the last layer,
+# just permute the ROWS of one layer and the COLUMNS of the next
+
+
 @jit
 @jaxtyped(typechecker=beartype)
-def permute(x: Float[Array, "n ..."], indices: UInt[Array, "n"]) -> Array:
+def permute(x: Float[Array, "..."], indices: UInt[Array, "n"], axis: int) -> Array:
     # TODO: disable these assertions in production
-    n = x.shape[0]
+    n = x.shape[axis]
     assert indices.shape == (n,)
+    # assert jnp.all(indices >= 0) # implicit in the type signature
     assert jnp.all(indices < n)
     for i in range(n):
         assert not jnp.isin(indices[i], indices[:i])
-    return x[indices]
+    return jnp.apply_along_axis(lambda z: z[indices], axis, x)
 
 
 @jit
