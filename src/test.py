@@ -1,4 +1,4 @@
-import distributions, feedforward, permutations
+from . import distributions, feedforward, permutations
 
 from beartype import beartype
 from hypothesis import given, settings, strategies as st, Verbosity

@@ -27,6 +27,7 @@
           [ jax ]
           ++ (with pypkgs; [
             beartype
+            coverage
             jaxtyping
             python
           ]);

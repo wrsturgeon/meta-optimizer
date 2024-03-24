@@ -1,4 +1,4 @@
-from nontest import jit
+from .nontest import jit
 
 from dataclasses import dataclass
 from beartype import beartype

@@ -23,10 +23,12 @@ jobs:
       run: mypy .
     - name: nix build
       run: nix build
-    - name: nix run
-      run: nix run
+    - name: coverage
+      run: coverage run --omit '/nix/*' -m pytest src/test.py
     - name: nix run .#ci
       run: nix run .#ci
+    - name: nix run
+      run: nix run
   mac:
     runs-on: macos-latest
     steps:
@@ -45,7 +47,9 @@ jobs:
       run: mypy .
     - name: nix build
       run: nix build
-    - name: nix run
-      run: nix run
+    - name: coverage
+      run: coverage run --omit '/nix/*' -m pytest src/test.py
     - name: nix run .#ci
       run: nix run .#ci
+    - name: nix run
+      run: nix run

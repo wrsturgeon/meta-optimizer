@@ -1,4 +1,4 @@
-from nontest import jit
+from .nontest import jit
 
 from beartype import beartype
 from functools import partial
@@ -41,10 +41,6 @@ def kabsch(
     rotated = to_be_rotated @ R  # should be arbitrarily close to `target`, save roundoff error
     ```
     """
-    assert (
-        to_be_rotated.ndim == 3
-    ), "Please send 3-axis tensors to `kabsch`: (batch, points, ndim)"
-    assert to_be_rotated.shape == target.shape
     covariance = to_be_rotated.transpose(0, 2, 1) @ target
     u, _, vT = jla.svd(covariance)
     return u @ vT
