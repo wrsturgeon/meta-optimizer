@@ -439,26 +439,26 @@ def test_permute_axis_check():
         permutations.permute(x, i, axis=5)
 
 
-# @jaxtyped(typechecker=beartype)
-# def prop_permutation_net_id(
-#     perms: list[list[int]],
-#     W: Float[Array, "layers ndim ndim"],
-#     B: Float[Array, "layers ndim"],
-#     x: Float[Array, "ndim"],
-# ):
-#     y = x
-#     for perm in perms:
-#         y = permutations.permute(x, perm, axis=0)
-#     assert jnp.allclose(y, x)
-#
-#
-# @given(
-#     st.permutations(range(5)),
-#     st.permutations(range(5)),
-#     st.permutations(range(5)),
-# )
-# @jaxtyped(typechecker=beartype)
-# def test_permutation_net_id_prop(
-#     p1: list[int], p2: list[int], p3: list[int], W: Float[Array, "3 5 5"]
-# ):
-#     raise NotImplementedError()
+@jaxtyped(typechecker=beartype)
+def test_find_permutation_1():
+    Wideal = jnp.eye(5, 5, dtype=jnp.float32)
+    Bideal = jnp.ones(5, dtype=jnp.float32)
+    Wactual = jnp.array(
+        [
+            [0, 0, -1, 0, 0],
+            [1, 0, 0, 0, 0],
+            [0, 0, 0, -1, 0],
+            [0, 1, 0, 0, 0],
+            [0, 0, 0, 0, 1],
+        ],
+        dtype=jnp.float32,
+    )
+    Bactual = jnp.array([-1, 1, -1, 1, 1], dtype=jnp.float32)
+    p = permutations.find_permutation(
+        Wactual, Bactual, Wideal, Bideal, jnp.array(range(5), dtype=jnp.uint)
+    )
+    assert jnp.all(p.indices == jnp.array([2, 0, 3, 1, 4], dtype=jnp.uint))
+    assert jnp.all(
+        p.flip == jnp.array([True, False, True, False, False], dtype=jnp.bool)
+    )
+    assert jnp.allclose(p.loss, 0)
