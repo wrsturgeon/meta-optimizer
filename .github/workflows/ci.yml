@@ -24,7 +24,14 @@ jobs:
     - name: nix build
       run: nix build
     - name: coverage
-      run: coverage run --omit '/nix/*' -m pytest src/test.py && coverage report -m && export COVSUMMARY=($(coverage report -m | tail -n 1)) && if [ "${COVSUMMARY[4]}" != "100%" ]; then exit 1; fi
+      run: |
+        coverage run --omit '/nix/*' -m pytest src/test.py
+        coverage report -m
+        export COVSUMMARY=($(coverage report -m | tail -n 1))
+        if [ "${COVSUMMARY[4]}" != "100%" ]; then
+          echo '${COVSUMMARY[4]}'" was '${COVSUMMARY[4]}', but we expected it to be '100%'"
+          exit 1
+        fi
     - name: nix run .#ci
       run: nix run .#ci
     - name: nix run
@@ -48,7 +55,14 @@ jobs:
     - name: nix build
       run: nix build
     - name: coverage
-      run: coverage run --omit '/nix/*' -m pytest src/test.py && coverage report -m && export COVSUMMARY=($(coverage report -m | tail -n 1)) && if [ "${COVSUMMARY[4]}" != "100%" ]; then exit 1; fi
+      run: |
+        coverage run --omit '/nix/*' -m pytest src/test.py
+        coverage report -m
+        export COVSUMMARY=($(coverage report -m | tail -n 1))
+        if [ "${COVSUMMARY[4]}" != "100%" ]; then
+          echo '${COVSUMMARY[4]}'" was '${COVSUMMARY[4]}', but we expected it to be '100%'"
+          exit 1
+        fi
     - name: nix run .#ci
       run: nix run .#ci
     - name: nix run
