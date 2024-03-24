@@ -52,7 +52,7 @@ def rotate_and_compare(
     actual: Float[Array, "batch points ndim"],
     ideal: Float[Array, "batch points ndim"],
 ) -> tuple[
-    jnp.float32,
+    Float[Array, ""],
     Float[Array, "batch points ndim"],
     Float[Array, "batch ndim ndim"],
 ]:

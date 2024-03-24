@@ -29,11 +29,11 @@ settings.register_profile(
 
 
 gh_ci = environ.get("GITHUB_CI")
-if gh_ci == "1":
+if gh_ci == "1":  # pragma: no cover
     print("***** Running in CI mode")
     settings.load_profile("ci")
     TEST_COUNT = TEST_COUNT_CI
-else:
+else:  # pragma: no cover
     print(
         f'***** NOT running in CI mode (environment variable `GITHUB_CI` is `{gh_ci}`, which is not `"1"`)'
     )
@@ -58,6 +58,11 @@ def prop_normalize_no_axis(x: Float[Array, "..."]):
 @jaxtyped(typechecker=beartype)
 def test_normalize_no_axis_prop(x: ArrayLike):
     prop_normalize_no_axis(jnp.array(x))
+
+
+@jaxtyped(typechecker=beartype)
+def test_normalize_no_axis():
+    prop_normalize_no_axis(jnp.array([-1, 1, -1, 1, -1], dtype=jnp.float32))
 
 
 # Identical to the above, except along one specific axis
@@ -204,6 +209,27 @@ def test_kabsch_prop(to_be_rotated: ArrayLike, target: ArrayLike):
     prop_kabsch(jnp.array(to_be_rotated), jnp.array(target))
 
 
+@jaxtyped(typechecker=beartype)
+def test_rotate_and_compare_1():
+    ideal = jnp.eye(5, 5)[jnp.newaxis]
+    actual = jnp.array(
+        [
+            [
+                [0, 0, 1, 0, 0],
+                [1, 0, 0, 0, 0],
+                [0, 0, 0, 1, 0],
+                [0, 1, 0, 0, 0],
+                [0, 0, 0, 0, 1],
+            ]
+        ],
+        dtype=jnp.float32,
+    )
+    norm, rotated, R = distributions.rotate_and_compare(actual, ideal)
+    assert jnp.allclose(norm, 0)
+    assert jnp.allclose(rotated, ideal)
+    assert jnp.allclose(R, actual.transpose(0, 2, 1))
+
+
 @given(hnp.arrays(dtype=jnp.float32, shape=(3, 3)))
 @jaxtyped(typechecker=beartype)
 def test_feedforward_id_prop(np_x: ArrayLike):
@@ -297,6 +323,16 @@ def test_rotating_weights_3():
 
 
 @jaxtyped(typechecker=beartype)
+def test_rotating_weights_4():
+    prop_rotating_weights(
+        W=[jnp.zeros([0, 0, 0])],
+        B=[jnp.zeros([0, 0])],
+        x=jnp.array([[]]),
+        angles=[jnp.array([jnp.inf])],
+    )
+
+
+@jaxtyped(typechecker=beartype)
 def test_rotating_weights_prop_fake():
     for seed in range(TEST_COUNT):
         k1, k2, k3 = jrnd.split(jrnd.PRNGKey(seed), 3)
@@ -327,7 +363,10 @@ def test_rotating_weights_prop_fake():
 
 
 @jaxtyped(typechecker=beartype)
-def prop_permutation_conjecture(r1: Float[Array, "n"], r2: Float[Array, "n"]):
+def prop_permutation_conjecture(
+    r1: Float[Array, "batch points ndim"],
+    r2: Float[Array, "batch points ndim"],
+):
     # these lines (this comment +/- 1) are effectively just
     # generating a random rotation matrix stored in `R`
     R = distributions.kabsch(r1, r2)
@@ -355,11 +394,8 @@ def prop_permutation_conjecture(r1: Float[Array, "n"], r2: Float[Array, "n"]):
 def test_permutation_conjecture_disproven():
     r1 = jnp.array([[[0.21653588, -0.6419788, 1.1067219]]], dtype=jnp.float32)
     r2 = jnp.array([[[-0.9220991, 2.6091485, -1.3119074]]], dtype=jnp.float32)
-    try:
+    with pytest.raises(AssertionError):
         prop_permutation_conjecture(r1, r2)
-        raise
-    except:
-        return
 
 
 # TODO: Write a 2^n-time ( :( ) checker for the above,
