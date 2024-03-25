@@ -12,7 +12,7 @@ from os import environ
 import pytest
 
 
-TEST_COUNT_CI = 10  # 000
+TEST_COUNT_CI = 10000
 TEST_COUNT_NORMAL = 100
 settings.register_profile(
     "no_deadline",
@@ -562,3 +562,32 @@ def test_permute_hidden_layers_prop(
         [jnp.array(p, dtype=jnp.uint32) for p in P],
         jnp.array(x),
     )
+
+
+@jaxtyped(typechecker=beartype)
+def test_layer_distance():
+    eye = jnp.eye(5, 5)
+    perm = jnp.array([3, 1, 4, 2, 0], dtype=jnp.uint32)
+    inv_perm = jnp.array([4, 1, 3, 0, 2], dtype=jnp.uint32)
+    Wactual = [
+        permutations.permute(eye, perm, axis=0),
+        permutations.permute(eye, inv_perm, axis=0),
+        eye,
+    ]
+    Bactual = [jnp.zeros(5) for _ in range(3)]
+    Wideal = [eye, eye, eye]
+    Bideal = [jnp.zeros(5) for _ in range(3)]
+    last_best = [jnp.array(range(5), dtype=jnp.uint32) for _ in range(2)]
+    loss, ps = permutations.layer_distance(
+        Wactual,
+        Bactual,
+        Wideal,
+        Bideal,
+        last_best,
+    )
+    assert len(ps) == 2
+    assert jnp.isclose(loss, 0)
+    assert jnp.all(ps[0].indices == perm)
+    assert jnp.all(jnp.logical_not(ps[0].flip))
+    assert jnp.all(ps[1].indices == inv_perm)
+    assert jnp.all(jnp.logical_not(ps[1].flip))

@@ -165,3 +165,35 @@ def permute_hidden_layers(
         W[i + 1] = permute(W[i + 1], p, axis=1)
         B[i] = permute(B[i], p, axis=0)
     return W, B
+
+
+@jit
+@jaxtyped(typechecker=beartype)
+def layer_distance(
+    Wactual: list[Float[Array, "..."]],
+    Bactual: list[Float[Array, "..."]],
+    Wideal: list[Float[Array, "..."]],
+    Bideal: list[Float[Array, "..."]],
+    last_best: list[UInt[Array, "..."]],
+) -> tuple[Float[Array, ""], list[Permutation]]:
+    """
+    Compute the "true" distance between two sets of weights and biases,
+    allowing permutations at every layer without changing the final output.
+    Return value: `loss, permutations`
+    This function automatically finds the set of permutations minimizing L2 loss,
+    but it should be noted that this is only a (very good) approximation:
+    the permutations for each layer are computed separately and chained,
+    and, technically, there could be mathematical complications related to
+    a set of permutations for adjacent layers that would be optimal for both
+    yet non-optimal for each layer considered alone.
+    In practice, however, the extra loss in situations like the above
+    should be entirely negligible.
+    TODO: Investigate the above . . . if you have the compute to do so.
+    """
+    n = len(Wactual)
+    assert n == len(Bactual) == len(Wideal) == len(Bideal) == len(last_best) + 1
+    ps = [
+        find_permutation(wa, ba, wi, bi, lb)
+        for wa, ba, wi, bi, lb in zip(Wactual, Bactual, Wideal, Bideal, last_best)
+    ]
+    return sum([p.loss for p in ps]), ps
