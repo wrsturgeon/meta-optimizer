@@ -35,12 +35,14 @@
           ]);
         checkInputs = with pypkgs; [
           black
-          coverage
           hypothesis
           mypy
           pytest
         ];
-        shellInputs = with pypkgs; [ python-lsp-server ];
+        shellInputs = with pypkgs; [
+          coverage
+          python-lsp-server
+        ];
         buildAndRun = exec: ''
           mkdir -p $out/bin
           mv ./* $out/
