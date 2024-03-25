@@ -512,12 +512,9 @@ def prop_permute_hidden_layers(
         (not all([jnp.all(jnp.isfinite(w)) for w in W]))
         or (not all([jnp.all(jnp.isfinite(b)) for b in B]))
         or (not jnp.all(jnp.isfinite(x)))
-        or max(
-            max([jnp.sum(jnp.square(w)) for w in W]),
-            max([jnp.sum(jnp.square(b)) for b in B]),
-            jnp.sum(jnp.square(x)),
-        )
-        > 1e5
+        or any([jnp.any(jnp.sum(jnp.square(w)) > 1e5) for w in W])
+        or any([jnp.any(jnp.sum(jnp.square(b)) > 1e5) for b in B])
+        or jnp.sum(jnp.square(x)) > 1e5
     ):
         return
     Wp, Bp = permutations.permute_hidden_layers(W, B, p)
@@ -547,15 +544,15 @@ def test_permute_hidden_layers_2():
 
 
 @given(
-    hnp.arrays(dtype=jnp.float32, shape=(3, 5, 5)),
-    hnp.arrays(dtype=jnp.float32, shape=(3, 5)),
+    st.lists(hnp.arrays(dtype=jnp.float32, shape=(5, 5)), min_size=3, max_size=3),
+    st.lists(hnp.arrays(dtype=jnp.float32, shape=(5)), min_size=3, max_size=3),
     st.lists(st.permutations(range(5)), min_size=2, max_size=2),
     hnp.arrays(dtype=jnp.float32, shape=(1, 5)),
 )
 @jaxtyped(typechecker=beartype)
 def test_permute_hidden_layers_prop(
-    W: ArrayLike,
-    B: ArrayLike,
+    W: list[ArrayLike],
+    B: list[ArrayLike],
     P: list[list[int]],
     x: ArrayLike,
 ):
