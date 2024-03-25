@@ -27,11 +27,11 @@
           [ jax ]
           ++ (with pypkgs; [
             beartype
-            coverage
             jaxtyping
             python
           ]);
         checkInputs = with pypkgs; [
+          coverage
           hypothesis
           pytest
         ];
