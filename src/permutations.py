@@ -73,16 +73,6 @@ def find_permutation_rec(
     best: Permutation,
     acc: Permutation,
 ) -> Permutation:
-    """
-    Exhaustive search for layer-wise permutations minimizing a given loss
-    that nonetheless, when all applied in order, reverse any intermediate permutations
-    and output the correct indices in their original positions.
-    This not quite as bad as naïve brute-force search (unfortunately close), since
-    we maintain a running best-yet loss and short-circuit anything above it.
-    Better yet, since these matrices should change slowly,
-    we initialize the best-yet loss with the
-    best matrix from the last step.
-    """
     n_out, n_in = Wactual.shape
     assert best.indices.shape == best.flip.shape == (n_out,)
     (acc_len,) = acc.indices.shape
@@ -98,7 +88,7 @@ def find_permutation_rec(
         if i not in acc.indices:
             w_ideal = Wideal[i]
             b_ideal = Bideal[i]
-            indices = jnp.append(acc.indices, jnp.array(i, dtype=jnp.uint))
+            indices = jnp.append(acc.indices, jnp.array(i, dtype=jnp.uint32))
             loss_orig = jnp.sum(jnp.square(w_ideal - w_actual)) + jnp.square(
                 b_ideal - b_actual
             )
@@ -126,6 +116,16 @@ def find_permutation(
     Bideal: Float[Array, "n_out"],
     last_best: UInt[Array, "n_out"],
 ) -> Permutation:
+    """
+    Exhaustive search for layer-wise permutations minimizing a given loss
+    that nonetheless, when all applied in order, reverse any intermediate permutations
+    and output the correct indices in their original positions.
+    This not quite as bad as naïve brute-force search (unfortunately close), since
+    we maintain a running best-yet loss and short-circuit anything above it.
+    Better yet, since these matrices should change slowly,
+    we initialize the best-yet loss with the
+    best matrix from the last step.
+    """
     n_out, n_in = Wactual.shape
     Sactual = jnp.sqrt(jnp.mean(jnp.square(Wactual), axis=1, keepdims=True))
     assert Sactual.shape == (n_out, 1)
@@ -142,8 +142,26 @@ def find_permutation(
         Bideal,
         score_permutation(Wactual, Bactual, Wideal, Bactual, last_best),
         Permutation(
-            jnp.array([], dtype=jnp.uint),
+            jnp.array([], dtype=jnp.uint32),
             jnp.array([], dtype=jnp.bool),
             jnp.array(0, dtype=jnp.float32),
         ),
     )
+
+
+@jit
+@jaxtyped(typechecker=beartype)
+def permute_hidden_layers(
+    W: list[Float[Array, "..."]],
+    B: list[Float[Array, "..."]],
+    ps: list[UInt[Array, "..."]],
+) -> tuple[list[Float[Array, "..."]], list[Float[Array, "..."]]]:
+    """Permute hidden layers' columns locally without changing the output of a network."""
+    n = len(ps)
+    assert len(W) == len(B) == n + 1
+    for i in range(n):
+        p = ps[i]
+        W[i] = permute(W[i], p, axis=0)
+        W[i + 1] = permute(W[i + 1], p, axis=1)
+        B[i] = permute(B[i], p, axis=0)
+    return W, B

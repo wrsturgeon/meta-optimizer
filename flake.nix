@@ -35,11 +35,14 @@
           hypothesis
           pytest
         ];
-        shellInputs = with pypkgs; [
-          black
-          mypy
-          python-lsp-server
-        ];
+        shellInputs =
+          with pypkgs;
+          [
+            black
+            mypy
+            python-lsp-server
+          ]
+          ++ (with pkgs.nodePackages; [ bash-language-server ]);
         buildAndRun = exec: ''
           mkdir -p $out/bin
           mv ./* $out/
@@ -49,7 +52,7 @@
           chmod +x $out/bin/${pname}
         '';
         checkPhase = ''
-          ${pypkgs.pytest}/bin/pytest $out/src/test.py
+          ${pypkgs.pytest}/bin/pytest -Werror $out/src/test.py
         '';
         derivationSettings = {
           inherit

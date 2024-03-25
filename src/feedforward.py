@@ -4,6 +4,7 @@ from beartype import beartype
 from beartype.typing import Callable
 from functools import partial
 from jax import nn as jnn, numpy as jnp, random as jrnd
+from jax.experimental import checkify
 from jax.numpy import linalg as jla
 from jaxtyping import jaxtyped, Array, Float, UInt
 
@@ -18,15 +19,20 @@ def feedforward(
     x: Float[Array, "batch n_in"],
     nl: Callable[[Float[Array, "..."]], Float[Array, "..."]],  # = jnn.gelu,
 ) -> Float[Array, "batch n_out"]:
-    assert x.ndim == 2
     batch, ndim_in = x.shape
     x = x[..., jnp.newaxis]
-    assert x.shape == (batch, ndim_in, 1)
     n = len(W)
     assert n == len(B)
+    checkify.check(
+        jnp.all(jnp.isfinite(x)),
+        "`feedforward` got an input `x` with non-finite values",
+    )
     for i in range(n):
         x = nl((W[i] @ x) + B[i][jnp.newaxis, ..., jnp.newaxis])
-    assert x.shape[-1] == 1
+        checkify.check(
+            jnp.all(jnp.isfinite(x)),
+            "`feedforward` produced a hidden `x` with non-finite values",
+        )
     return x[..., 0]
 
 

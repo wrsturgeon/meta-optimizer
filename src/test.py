@@ -5,7 +5,7 @@ from hypothesis import given, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
 from jax import nn as jnn, numpy as jnp, random as jrnd
 from jax.numpy import linalg as jla
-from jaxtyping import jaxtyped, Array, Float, TypeCheckError
+from jaxtyping import jaxtyped, Array, Float, TypeCheckError, UInt
 from math import prod
 from numpy.typing import ArrayLike
 from os import environ
@@ -415,7 +415,7 @@ def test_permute_1():
         ],
         dtype=jnp.float32,
     )
-    i = jnp.array([3, 1, 4, 2, 0], dtype=jnp.uint)
+    i = jnp.array([3, 1, 4, 2, 0], dtype=jnp.uint32)
     y = permutations.permute(x, i, axis=0)
     assert jnp.allclose(
         y,
@@ -443,7 +443,7 @@ def test_permute_2():
         ],
         dtype=jnp.float32,
     )
-    i = jnp.array([3, 1, 4, 2, 0], dtype=jnp.uint)
+    i = jnp.array([3, 1, 4, 2, 0], dtype=jnp.uint32)
     y = permutations.permute(x, i, axis=1)
     assert jnp.allclose(
         y,
@@ -462,7 +462,7 @@ def test_permute_2():
 @jaxtyped(typechecker=beartype)
 def test_permute_size_check():
     x = jnp.eye(5, 5, dtype=jnp.float32)
-    i = jnp.array(range(6), dtype=jnp.uint)
+    i = jnp.array(range(6), dtype=jnp.uint32)
     with pytest.raises(AssertionError):
         permutations.permute(x, i, axis=0)
 
@@ -470,7 +470,7 @@ def test_permute_size_check():
 @jaxtyped(typechecker=beartype)
 def test_permute_axis_check():
     x = jnp.eye(5, 5, dtype=jnp.float32)
-    i = jnp.array(range(5), dtype=jnp.uint)
+    i = jnp.array(range(5), dtype=jnp.uint32)
     with pytest.raises(IndexError):
         permutations.permute(x, i, axis=5)
 
@@ -491,10 +491,77 @@ def test_find_permutation_1():
     )
     Bactual = jnp.array([-1, 1, -1, 1, 1], dtype=jnp.float32)
     p = permutations.find_permutation(
-        Wactual, Bactual, Wideal, Bideal, jnp.array(range(5), dtype=jnp.uint)
+        Wactual, Bactual, Wideal, Bideal, jnp.array(range(5), dtype=jnp.uint32)
     )
-    assert jnp.all(p.indices == jnp.array([2, 0, 3, 1, 4], dtype=jnp.uint))
+    assert jnp.all(p.indices == jnp.array([2, 0, 3, 1, 4], dtype=jnp.uint32))
     assert jnp.all(
         p.flip == jnp.array([True, False, True, False, False], dtype=jnp.bool)
     )
     assert jnp.allclose(p.loss, 0)
+
+
+@jaxtyped(typechecker=beartype)
+def prop_permute_hidden_layers(
+    W: list[Float[Array, "..."]],
+    B: list[Float[Array, "..."]],
+    p: list[UInt[Array, "..."]],
+    x: Float[Array, "batch ndim"],
+):
+    assert len(W) == len(B) == len(p) + 1
+    if (
+        (not all([jnp.all(jnp.isfinite(w)) for w in W]))
+        or (not all([jnp.all(jnp.isfinite(b)) for b in B]))
+        or (not jnp.all(jnp.isfinite(x)))
+        or max(
+            max([jnp.sum(jnp.square(w)) for w in W]),
+            max([jnp.sum(jnp.square(b)) for b in B]),
+            jnp.sum(jnp.square(x)),
+        )
+        > 1e5
+    ):
+        return
+    Wp, Bp = permutations.permute_hidden_layers(W, B, p)
+    y = feedforward.feedforward(W, B, x, nl=jnn.gelu)
+    yp = feedforward.feedforward(Wp, Bp, x, nl=jnn.gelu)
+    assert jnp.allclose(y, yp)
+
+
+@jaxtyped(typechecker=beartype)
+def test_permute_hidden_layers_1():
+    prop_permute_hidden_layers(
+        [jnp.zeros([5, 5]) for _ in range(3)],
+        [jnp.zeros([5]) for _ in range(3)],
+        [jnp.array(range(5), dtype=jnp.uint32), jnp.array(range(5), dtype=jnp.uint32)],
+        jnp.zeros([1, 5]),
+    )
+
+
+@jaxtyped(typechecker=beartype)
+def test_permute_hidden_layers_2():
+    prop_permute_hidden_layers(
+        W=list(jnp.full([3, 5, 5], 3.2994486e17)),
+        B=list(jnp.full([3, 5], 5.442048e17)),
+        p=[jnp.array(range(5), dtype=jnp.uint32) for _ in range(2)],
+        x=jnp.full([1, 5], 1.3602583e17),
+    )
+
+
+@given(
+    hnp.arrays(dtype=jnp.float32, shape=(3, 5, 5)),
+    hnp.arrays(dtype=jnp.float32, shape=(3, 5)),
+    st.lists(st.permutations(range(5)), min_size=2, max_size=2),
+    hnp.arrays(dtype=jnp.float32, shape=(1, 5)),
+)
+@jaxtyped(typechecker=beartype)
+def test_permute_hidden_layers_prop(
+    W: ArrayLike,
+    B: ArrayLike,
+    P: list[list[int]],
+    x: ArrayLike,
+):
+    prop_permute_hidden_layers(
+        [jnp.array(w) for w in W],
+        [jnp.array(b) for b in B],
+        [jnp.array(p, dtype=jnp.uint32) for p in P],
+        jnp.array(x),
+    )
