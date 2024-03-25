@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -eux
+set -eu
 
 coverage run --omit '/nix/*' -m pytest -Werror test.py
 coverage report -m
