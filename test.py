@@ -2,7 +2,7 @@ from metaoptimizer import distributions, feedforward, permutations, stock_optimi
 from metaoptimizer.weights import Weights
 
 from beartype import beartype
-from beartype.typing import Callable, Protocol
+from beartype.typing import Any, Callable, Protocol
 from functools import partial
 from hypothesis import given, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
@@ -599,8 +599,12 @@ def test_layer_distance():
     assert jnp.all(jnp.logical_not(ps[1].flip))
 
 
+NDIM = 5
+LAYERS = 3
+
+
 @jaxtyped(typechecker=beartype)
-def prop_optim(optim: Callable[[Weights, Weights], Weights]):
+def prop_optim(optim: Callable[[Weights, Weights], tuple[Any, Weights]]):
 
     @jaxtyped(typechecker=beartype)
     def raw_loss(w: Weights, x: Float[Array, "batch ndim"]) -> Float[Array, ""]:
@@ -610,19 +614,18 @@ def prop_optim(optim: Callable[[Weights, Weights], Weights]):
 
     loss = jit(checkify.checkify(raw_loss))
     dLdw = jit(checkify.checkify(grad(raw_loss, argnums=0)))
-
-    ndim = 5
-    layers = 3
-    w = feedforward.feedforward_init([ndim for _ in range(layers)], jrnd.PRNGKey(42))
+    w = feedforward.feedforward_init(
+        [NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42)
+    )
     key = jrnd.PRNGKey(42)
-    orig_x = jrnd.uniform(key, [1, ndim])
+    orig_x = jrnd.uniform(key, [1, NDIM])
     err, orig_loss = loss(w, orig_x)
     err.throw()
     for _ in range(100):
         k, key = jrnd.split(key)
-        err, d = dLdw(w, jrnd.uniform(k, [1, ndim]))
+        err, d = dLdw(w, jrnd.uniform(k, [1, NDIM]))
         err.throw()
-        w = optim(w, d)
+        optim, w = optim(w, d)
     err, post_loss = loss(w, orig_x)
     err.throw()
     # make sure we learned *something*:
@@ -632,3 +635,17 @@ def prop_optim(optim: Callable[[Weights, Weights], Weights]):
 @jaxtyped(typechecker=beartype)
 def test_optim_sgd():
     prop_optim(stock_optimizers.SGD(0.01))
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_momentum():
+    prop_optim(
+        stock_optimizers.Momentum(
+            0.01,
+            0.5,
+            Weights(
+                [jnp.zeros([NDIM, NDIM]) for _ in range(LAYERS)],
+                [jnp.zeros([NDIM]) for _ in range(LAYERS)],
+            ),
+        )
+    )
