@@ -21,14 +21,10 @@ jobs:
         nix_channel: nixpkgs
     - name: mypy .
       run: mypy .
-    - name: nix build
-      run: nix build
     - name: ./coverage.sh
       run: ./coverage.sh
     - name: nix run .#ci
       run: nix run .#ci
-    - name: nix run
-      run: nix run
   mac:
     runs-on: macos-latest
     steps:
@@ -45,11 +41,7 @@ jobs:
         nix_channel: nixpkgs
     - name: mypy .
       run: mypy .
-    - name: nix build
-      run: nix build
     - name: ./coverage.sh
       run: ./coverage.sh
     - name: nix run .#ci
       run: nix run .#ci
-    - name: nix run
-      run: nix run

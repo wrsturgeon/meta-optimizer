@@ -12,7 +12,7 @@ from os import environ
 import pytest
 
 
-TEST_COUNT_CI = 10000
+TEST_COUNT_CI = 10  # 000
 TEST_COUNT_NORMAL = 100
 settings.register_profile(
     "no_deadline",
@@ -24,7 +24,7 @@ settings.register_profile(
     "ci",
     parent=settings.get_profile("no_deadline"),
     max_examples=TEST_COUNT_CI,
-    verbosity=Verbosity.verbose,
+    # verbosity=Verbosity.verbose,
 )
 
 

@@ -35,14 +35,11 @@
           hypothesis
           pytest
         ];
-        shellInputs =
-          with pypkgs;
-          [
-            black
-            mypy
-            python-lsp-server
-          ]
-          ++ (with pkgs.nodePackages; [ bash-language-server ]);
+        shellInputs = with pypkgs; [
+          black
+          mypy
+          python-lsp-server
+        ];
         buildAndRun = exec: ''
           mkdir -p $out/bin
           mv ./* $out/
@@ -51,35 +48,28 @@
           echo "${exec}" >> $out/bin/${pname}
           chmod +x $out/bin/${pname}
         '';
-        checkPhase = ''
-          ${pypkgs.pytest}/bin/pytest -Werror $out/src/test.py
-        '';
         derivationSettings = {
           inherit
+            checkInputs
             propagatedBuildInputs
             pname
             src
             version
             ;
           buildPhase = buildAndRun "${pypkgs.python}/bin/python $out/src/main.py";
+          checkPhase = "${pypkgs.pytest}/bin/pytest -Werror $out/src/test.py";
+          doCheck = true;
         };
       in
       {
         packages = {
-          default = pkgs.stdenv.mkDerivation (
-            derivationSettings
-            // {
-              inherit checkInputs checkPhase;
-              doCheck = true;
-            }
-          );
+          default = pkgs.stdenv.mkDerivation derivationSettings;
           ci = pkgs.stdenv.mkDerivation (
             derivationSettings
             // {
-              propagatedBuildInputs = propagatedBuildInputs ++ checkInputs;
-              buildPhase = buildAndRun ''
+              checkPhase = ''
                 export GITHUB_CI=1
-                ${checkPhase}
+                ${derivationSettings.checkPhase}
               '';
             }
           );
