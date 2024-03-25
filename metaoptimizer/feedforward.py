@@ -13,6 +13,7 @@ KeyArray = UInt[Array, "n_keys"]  # <https://github.com/google/jax/issues/12706>
 
 
 @partial(jit, static_argnames=["nl"])
+@checkify.checkify
 @jaxtyped(typechecker=beartype)
 def feedforward(
     w: Weights,

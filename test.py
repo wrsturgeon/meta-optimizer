@@ -1,10 +1,13 @@
-from metaoptimizer import distributions, feedforward, permutations
+from metaoptimizer import distributions, feedforward, permutations, stock_optimizers
 from metaoptimizer.weights import Weights
 
 from beartype import beartype
+from beartype.typing import Callable, Protocol
+from functools import partial
 from hypothesis import given, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
-from jax import nn as jnn, numpy as jnp, random as jrnd
+from jax import jit, grad, nn as jnn, numpy as jnp, random as jrnd
+from jax.experimental import checkify
 from jax.numpy import linalg as jla
 from jaxtyping import jaxtyped, Array, Float, TypeCheckError, UInt
 from math import prod
@@ -237,9 +240,10 @@ def test_feedforward_id_prop(np_x: ArrayLike):
     x = jnp.array(np_x)
     if not jnp.all(jnp.isfinite(x)):
         return
-    y = feedforward.feedforward(
+    err, y = feedforward.feedforward(
         Weights([jnp.eye(3, 3)], [jnp.zeros([3])]), x, nl=lambda z: z
     )
+    err.throw()
     assert jnp.allclose(y, x)
 
 
@@ -254,7 +258,8 @@ def test_feedforward_id_prop(np_x: ArrayLike):
 @jaxtyped(typechecker=beartype)
 def test_feedforward_init_1():
     w = feedforward.feedforward_init([5, 42, 3, 8, 7], jrnd.PRNGKey(42))
-    y = feedforward.feedforward(w, jnp.ones([1, 5]), nl=jnn.gelu)
+    err, y = feedforward.feedforward(w, jnp.ones([1, 5]), nl=jnn.gelu)
+    err.throw()
     assert jnp.allclose(
         y,
         jnp.array(
@@ -283,8 +288,10 @@ def prop_rotating_weights(
     angle_array = jnp.array(angles)[:, jnp.newaxis]
     R = list(distributions.kabsch(angle_array[:-1], angle_array[1:]))  # batched!
     wR = feedforward.rotate_weights(w, R)
-    y = feedforward.feedforward(w, x, nl=lambda z: z)
-    yR = feedforward.feedforward(wR, x, nl=lambda z: z)
+    err, y = feedforward.feedforward(w, x, nl=lambda z: z)
+    err.throw()
+    err, yR = feedforward.feedforward(wR, x, nl=lambda z: z)
+    err.throw()
     assert jnp.allclose(y, yR)
 
 
@@ -515,8 +522,10 @@ def prop_permute_hidden_layers(
     ):
         return
     wp = permutations.permute_hidden_layers(w, p)
-    y = feedforward.feedforward(w, x, nl=jnn.gelu)
-    yp = feedforward.feedforward(wp, x, nl=jnn.gelu)
+    err, y = feedforward.feedforward(w, x, nl=jnn.gelu)
+    err.throw()
+    err, yp = feedforward.feedforward(wp, x, nl=jnn.gelu)
+    err.throw()
     assert jnp.allclose(y, yp)
 
 
@@ -588,3 +597,38 @@ def test_layer_distance():
     assert jnp.all(jnp.logical_not(ps[0].flip))
     assert jnp.all(ps[1].indices == inv_perm)
     assert jnp.all(jnp.logical_not(ps[1].flip))
+
+
+@jaxtyped(typechecker=beartype)
+def prop_optim(optim: Callable[[Weights, Weights], Weights]):
+
+    @jaxtyped(typechecker=beartype)
+    def raw_loss(w: Weights, x: Float[Array, "batch ndim"]) -> Float[Array, ""]:
+        err, y = feedforward.feedforward(w, x, nl=jnn.gelu)
+        err.throw()
+        return jnp.sum(jnp.abs(jnp.sin(x) - y))
+
+    loss = jit(checkify.checkify(raw_loss))
+    dLdw = jit(checkify.checkify(grad(raw_loss, argnums=0)))
+
+    ndim = 5
+    layers = 3
+    w = feedforward.feedforward_init([ndim for _ in range(layers)], jrnd.PRNGKey(42))
+    key = jrnd.PRNGKey(42)
+    orig_x = jrnd.uniform(key, [1, ndim])
+    err, orig_loss = loss(w, orig_x)
+    err.throw()
+    for _ in range(100):
+        k, key = jrnd.split(key)
+        err, d = dLdw(w, jrnd.uniform(k, [1, ndim]))
+        err.throw()
+        w = optim(w, d)
+    err, post_loss = loss(w, orig_x)
+    err.throw()
+    # make sure we learned *something*:
+    assert post_loss < orig_loss
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_sgd():
+    prop_optim(stock_optimizers.SGD(0.01))

@@ -13,4 +13,8 @@ class SGD(NamedTuple):
 
     @jit
     def __call__(self, w: Weights, dLdw: Weights) -> Weights:
-        return Weights(w.W - self.lr * dLdw.W, w.B - self.lr * dLdw.B)
+        assert w.layers() == dLdw.layers()
+        return Weights(
+            [wi - self.lr * di for wi, di in zip(w.W, dLdw.W)],
+            [bi - self.lr * di for bi, di in zip(w.B, dLdw.B)],
+        )
