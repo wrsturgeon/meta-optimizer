@@ -19,8 +19,8 @@ jobs:
       with:
         use_nix_profile: true
         nix_channel: nixpkgs
-    - name: . ./coverage.sh
-      run: . ./coverage.sh
+    - name: coverage.sh
+      run: nix develop -c bash coverage.sh
     - name: nix run .#ci
       run: nix run .#ci
   mac:
@@ -37,7 +37,7 @@ jobs:
       with:
         use_nix_profile: true
         nix_channel: nixpkgs
-    - name: . ./coverage.sh
-      run: . ./coverage.sh
+    - name: coverage.sh
+      run: nix develop -c bash coverage.sh
     - name: nix run .#ci
       run: nix run .#ci
