@@ -1,15 +1,10 @@
 from metaoptimizer.nontest import jit
+from metaoptimizer.weights import Weights
 
-from dataclasses import dataclass
 from beartype import beartype
 from jax import numpy as jnp
 from jaxtyping import jaxtyped, Array, Bool, Float, UInt
-
-
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-# TODO:
-# Instead of reversing the permutations on the last layer,
-# just permute the ROWS of one layer and the COLUMNS of the next
+from typing import NamedTuple
 
 
 @jit
@@ -26,8 +21,7 @@ def permute(x: Float[Array, "..."], indices: UInt[Array, "n"], axis: int) -> Arr
 
 
 @jaxtyped(typechecker=beartype)
-@dataclass
-class Permutation:
+class Permutation(NamedTuple):
     """Description of a permutation on some tensor (without explicitly carrying around that tensor)."""
 
     indices: UInt[Array, "n"]
@@ -152,28 +146,25 @@ def find_permutation(
 @jit
 @jaxtyped(typechecker=beartype)
 def permute_hidden_layers(
-    W: list[Float[Array, "..."]],
-    B: list[Float[Array, "..."]],
+    w: Weights,
     ps: list[UInt[Array, "..."]],
-) -> tuple[list[Float[Array, "..."]], list[Float[Array, "..."]]]:
+) -> Weights:
     """Permute hidden layers' columns locally without changing the output of a network."""
     n = len(ps)
-    assert len(W) == len(B) == n + 1
+    assert w.layers() == n + 1
     for i in range(n):
         p = ps[i]
-        W[i] = permute(W[i], p, axis=0)
-        W[i + 1] = permute(W[i + 1], p, axis=1)
-        B[i] = permute(B[i], p, axis=0)
-    return W, B
+        w.W[i] = permute(w.W[i], p, axis=0)
+        w.W[i + 1] = permute(w.W[i + 1], p, axis=1)
+        w.B[i] = permute(w.B[i], p, axis=0)
+    return w
 
 
 @jit
 @jaxtyped(typechecker=beartype)
 def layer_distance(
-    Wactual: list[Float[Array, "..."]],
-    Bactual: list[Float[Array, "..."]],
-    Wideal: list[Float[Array, "..."]],
-    Bideal: list[Float[Array, "..."]],
+    actual: Weights,
+    ideal: Weights,
     last_best: list[UInt[Array, "..."]],
 ) -> tuple[Float[Array, ""], list[Permutation]]:
     """
@@ -190,10 +181,10 @@ def layer_distance(
     should be entirely negligible.
     TODO: Investigate the above . . . if you have the compute to do so.
     """
-    n = len(Wactual)
-    assert n == len(Bactual) == len(Wideal) == len(Bideal) == len(last_best) + 1
+    n = actual.layers()
+    assert ideal.layers() == len(last_best) + 1 == n
     ps = [
         find_permutation(wa, ba, wi, bi, lb)
-        for wa, ba, wi, bi, lb in zip(Wactual, Bactual, Wideal, Bideal, last_best)
+        for wa, ba, wi, bi, lb in zip(actual.W, actual.B, ideal.W, ideal.B, last_best)
     ]
     return sum([p.loss for p in ps]), ps

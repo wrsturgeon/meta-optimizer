@@ -1,4 +1,5 @@
 from metaoptimizer.nontest import jit
+from metaoptimizer.weights import Weights
 
 from beartype import beartype
 from beartype.typing import Callable
@@ -8,30 +9,28 @@ from jax.experimental import checkify
 from jax.numpy import linalg as jla
 from jaxtyping import jaxtyped, Array, Float, UInt
 
-KeyArray = UInt[Array, "n"]  # for now: <https://github.com/google/jax/issues/12706>
+KeyArray = UInt[Array, "n_keys"]  # <https://github.com/google/jax/issues/12706>
 
 
 @partial(jit, static_argnames=["nl"])
 @jaxtyped(typechecker=beartype)
 def feedforward(
-    W: list[Float[Array, "..."]],
-    B: list[Float[Array, "..."]],
+    w: Weights,
     x: Float[Array, "batch n_in"],
     nl: Callable[[Float[Array, "..."]], Float[Array, "..."]],  # = jnn.gelu,
 ) -> Float[Array, "batch n_out"]:
     batch, ndim_in = x.shape
     x = x[..., jnp.newaxis]
-    n = len(W)
-    assert n == len(B)
     checkify.check(
         jnp.all(jnp.isfinite(x)),
         "`feedforward` got an input `x` with non-finite values",
     )
+    n = w.layers()
     for i in range(n):
-        x = nl((W[i] @ x) + B[i][jnp.newaxis, ..., jnp.newaxis])
+        x = nl(w.W[i] @ x + w.B[i][jnp.newaxis, ..., jnp.newaxis])
         checkify.check(
             jnp.all(jnp.isfinite(x)),
-            "`feedforward` produced a hidden `x` with non-finite values",
+            f"`feedforward` produced a hidden `x` with non-finite values (after layer #{i})",
         )
     return x[..., 0]
 
@@ -41,7 +40,7 @@ def feedforward(
 def feedforward_init(
     sizes: list[int],
     key: KeyArray,
-) -> tuple[list[Float[Array, "..."]], list[Float[Array, "..."]]]:
+) -> Weights:
     n = len(sizes)
     W = []
     B = []
@@ -50,35 +49,32 @@ def feedforward_init(
         key, k = jrnd.split(key)
         W.append(init(k, (sizes[i], sizes[i - 1]), jnp.float32))
         B.append(jnp.zeros(sizes[i]))
-    return W, B
+    return Weights(W, B)
 
 
 @jit
 @jaxtyped(typechecker=beartype)
 def rotate_weights(
-    W: list[Float[Array, "..."]],
-    B: list[Float[Array, "..."]],
+    w: Weights,
     R: list[Float[Array, "..."]],
-) -> tuple[list[Float[Array, "..."]], list[Float[Array, "..."]]]:
-    assert isinstance(W, list)
-    assert isinstance(B, list)
+) -> Weights:
     assert isinstance(R, list)
     n = len(R)
-    assert n + 1 == len(W) == len(B)
+    assert w.layers() == n + 1
     # Note that "permutations" should occur only vertically,
     # since, in `Wx + B`, horizontal indices of `W`
     # track indices of the column-vector `x`.
     # So we're looking for `RW` instead of `WR`.
     for i in range(n):
-        W[i] = R[i] @ W[i]
-        B[i] = R[i] @ B[i]
+        w.W[i] = R[i] @ w.W[i]
+        w.B[i] = R[i] @ w.B[i]
         RT = R[i].T
         Rinv = jla.inv(R[i])
         inv_diff = jnp.abs(RT - Rinv)
         assert jnp.all(inv_diff < 0.01)
-        W[-1] = R[i].T @ W[-1]
+        w.W[-1] = R[i].T @ w.W[-1]
         # B[-1] = R[i].T @ B[-1]
-    return W, B
+    return w
 
 
 # TODO: Try using ML to find rotation matrices s.t.

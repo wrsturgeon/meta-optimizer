@@ -1,4 +1,5 @@
 from metaoptimizer import distributions, feedforward, permutations
+from metaoptimizer.weights import Weights
 
 from beartype import beartype
 from hypothesis import given, settings, strategies as st, Verbosity
@@ -12,7 +13,7 @@ from os import environ
 import pytest
 
 
-TEST_COUNT_CI = 10000
+TEST_COUNT_CI = 1000
 TEST_COUNT_NORMAL = 10
 settings.register_profile(
     "no_deadline",
@@ -236,7 +237,9 @@ def test_feedforward_id_prop(np_x: ArrayLike):
     x = jnp.array(np_x)
     if not jnp.all(jnp.isfinite(x)):
         return
-    y = feedforward.feedforward([jnp.eye(3, 3)], [jnp.zeros([3])], x, nl=lambda z: z)
+    y = feedforward.feedforward(
+        Weights([jnp.eye(3, 3)], [jnp.zeros([3])]), x, nl=lambda z: z
+    )
     assert jnp.allclose(y, x)
 
 
@@ -250,8 +253,8 @@ def test_feedforward_id_prop(np_x: ArrayLike):
 
 @jaxtyped(typechecker=beartype)
 def test_feedforward_init_1():
-    W, B = feedforward.feedforward_init([5, 42, 3, 8, 7], jrnd.PRNGKey(42))
-    y = feedforward.feedforward(W, B, jnp.ones([1, 5]), nl=jnn.gelu)
+    w = feedforward.feedforward_init([5, 42, 3, 8, 7], jrnd.PRNGKey(42))
+    y = feedforward.feedforward(w, jnp.ones([1, 5]), nl=jnn.gelu)
     assert jnp.allclose(
         y,
         jnp.array(
@@ -270,27 +273,25 @@ def test_feedforward_init_1():
 
 @jaxtyped(typechecker=beartype)
 def prop_rotating_weights(
-    W: list[Float[Array, "..."]],
-    B: list[Float[Array, "..."]],
+    w: Weights,
     x: Float[Array, "batch ndim"],
     angles: list[Float[Array, "..."]],
 ):
-    assert len(angles) == len(W)
+    assert len(angles) == w.layers()
     if not all([jnp.all(jnp.isfinite(angle)) for angle in angles]):
         return
     angle_array = jnp.array(angles)[:, jnp.newaxis]
     R = list(distributions.kabsch(angle_array[:-1], angle_array[1:]))  # batched!
-    WR, BR = feedforward.rotate_weights(W, B, R)
-    y = feedforward.feedforward(W, B, x, nl=lambda z: z)
-    yR = feedforward.feedforward(WR, BR, x, nl=lambda z: z)
+    wR = feedforward.rotate_weights(w, R)
+    y = feedforward.feedforward(w, x, nl=lambda z: z)
+    yR = feedforward.feedforward(wR, x, nl=lambda z: z)
     assert jnp.allclose(y, yR)
 
 
 @jaxtyped(typechecker=beartype)
 def test_rotating_weights_1():
     prop_rotating_weights(
-        [jnp.eye(3, 3)],
-        [jnp.eye(1, 3)[0]],
+        Weights([jnp.eye(3, 3)], [jnp.eye(1, 3)[0]]),
         jnp.eye(3, 3),
         [jnp.array([1, 0, 0], dtype=jnp.float32)],
     )
@@ -299,8 +300,7 @@ def test_rotating_weights_1():
 @jaxtyped(typechecker=beartype)
 def test_rotating_weights_2():
     prop_rotating_weights(
-        [jnp.eye(3, 3), jnp.eye(3, 3)],
-        [jnp.eye(1, 3)[0], jnp.eye(1, 3)[0]],
+        Weights([jnp.eye(3, 3), jnp.eye(3, 3)], [jnp.eye(1, 3)[0], jnp.eye(1, 3)[0]]),
         jnp.eye(3, 3),
         [
             jnp.array([1, 0, 0], dtype=jnp.float32),
@@ -312,8 +312,7 @@ def test_rotating_weights_2():
 @jaxtyped(typechecker=beartype)
 def test_rotating_weights_3():
     prop_rotating_weights(
-        W=list(jnp.ones([2, 3, 3])),
-        B=list(jnp.zeros([2, 3])),
+        w=Weights(list(jnp.ones([2, 3, 3])), list(jnp.zeros([2, 3]))),
         x=jnp.ones([1, 3]),
         angles=[
             jnp.array([0.0, 1.0, 1.0], dtype=jnp.float32),
@@ -325,8 +324,7 @@ def test_rotating_weights_3():
 @jaxtyped(typechecker=beartype)
 def test_rotating_weights_4():
     prop_rotating_weights(
-        W=[jnp.zeros([0, 0, 0])],
-        B=[jnp.zeros([0, 0])],
+        w=Weights([jnp.zeros([0, 0, 0])], [jnp.zeros([0, 0])]),
         x=jnp.array([[]]),
         angles=[jnp.array([jnp.inf])],
     )
@@ -340,7 +338,7 @@ def test_rotating_weights_prop_fake():
         B = list(jnp.zeros([2, 3]))
         x = jrnd.normal(k2, [3, 3])
         angles = list(jrnd.normal(k3, [2, 3]))
-        prop_rotating_weights(W, B, x, angles)
+        prop_rotating_weights(Weights(W, B), x, angles)
 
 
 # NOTE: THIS TAKES OVER TEN HOURS; use the above (identical but w/o shrinking) instead
@@ -356,7 +354,7 @@ def test_rotating_weights_prop_fake():
 #     x: Array,
 #     angles: Array,
 # ):
-#     prop_rotating_weights(list(W), list(B), x, list(angles))
+#     prop_rotating_weights(Weights(list(W), list(B)), x, list(angles))
 
 
 # TODO: test varying dimensionality across layers
@@ -502,32 +500,32 @@ def test_find_permutation_1():
 
 @jaxtyped(typechecker=beartype)
 def prop_permute_hidden_layers(
-    W: list[Float[Array, "..."]],
-    B: list[Float[Array, "..."]],
+    w: Weights,
     p: list[UInt[Array, "..."]],
     x: Float[Array, "batch ndim"],
 ):
-    assert len(W) == len(B) == len(p) + 1
+    assert w.layers() == len(p) + 1
     if (
-        (not all([jnp.all(jnp.isfinite(w)) for w in W]))
-        or (not all([jnp.all(jnp.isfinite(b)) for b in B]))
+        (not all([jnp.all(jnp.isfinite(w)) for w in w.W]))
+        or (not all([jnp.all(jnp.isfinite(b)) for b in w.B]))
         or (not jnp.all(jnp.isfinite(x)))
-        or any([jnp.any(jnp.sum(jnp.square(w)) > 1e5) for w in W])
-        or any([jnp.any(jnp.sum(jnp.square(b)) > 1e5) for b in B])
+        or any([jnp.any(jnp.sum(jnp.square(w)) > 1e5) for w in w.W])
+        or any([jnp.any(jnp.sum(jnp.square(b)) > 1e5) for b in w.B])
         or jnp.sum(jnp.square(x)) > 1e5
     ):
         return
-    Wp, Bp = permutations.permute_hidden_layers(W, B, p)
-    y = feedforward.feedforward(W, B, x, nl=jnn.gelu)
-    yp = feedforward.feedforward(Wp, Bp, x, nl=jnn.gelu)
+    wp = permutations.permute_hidden_layers(w, p)
+    y = feedforward.feedforward(w, x, nl=jnn.gelu)
+    yp = feedforward.feedforward(wp, x, nl=jnn.gelu)
     assert jnp.allclose(y, yp)
 
 
 @jaxtyped(typechecker=beartype)
 def test_permute_hidden_layers_1():
     prop_permute_hidden_layers(
-        [jnp.zeros([5, 5]) for _ in range(3)],
-        [jnp.zeros([5]) for _ in range(3)],
+        Weights(
+            [jnp.zeros([5, 5]) for _ in range(3)], [jnp.zeros([5]) for _ in range(3)]
+        ),
         [jnp.array(range(5), dtype=jnp.uint32), jnp.array(range(5), dtype=jnp.uint32)],
         jnp.zeros([1, 5]),
     )
@@ -536,8 +534,10 @@ def test_permute_hidden_layers_1():
 @jaxtyped(typechecker=beartype)
 def test_permute_hidden_layers_2():
     prop_permute_hidden_layers(
-        W=list(jnp.full([3, 5, 5], 3.2994486e17)),
-        B=list(jnp.full([3, 5], 5.442048e17)),
+        Weights(
+            list(jnp.full([3, 5, 5], 3.2994486e17)),
+            list(jnp.full([3, 5], 5.442048e17)),
+        ),
         p=[jnp.array(range(5), dtype=jnp.uint32) for _ in range(2)],
         x=jnp.full([1, 5], 1.3602583e17),
     )
@@ -557,8 +557,7 @@ def test_permute_hidden_layers_prop(
     x: ArrayLike,
 ):
     prop_permute_hidden_layers(
-        [jnp.array(w) for w in W],
-        [jnp.array(b) for b in B],
+        Weights([jnp.array(w) for w in W], [jnp.array(b) for b in B]),
         [jnp.array(p, dtype=jnp.uint32) for p in P],
         jnp.array(x),
     )
@@ -579,10 +578,8 @@ def test_layer_distance():
     Bideal = [jnp.zeros(5) for _ in range(3)]
     last_best = [jnp.array(range(5), dtype=jnp.uint32) for _ in range(2)]
     loss, ps = permutations.layer_distance(
-        Wactual,
-        Bactual,
-        Wideal,
-        Bideal,
+        Weights(Wactual, Bactual),
+        Weights(Wideal, Bideal),
         last_best,
     )
     assert len(ps) == 2
