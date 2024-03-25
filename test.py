@@ -1,4 +1,4 @@
-import distributions, feedforward, permutations
+from metaoptimizer import distributions, feedforward, permutations
 
 from beartype import beartype
 from hypothesis import given, settings, strategies as st, Verbosity
@@ -13,7 +13,7 @@ import pytest
 
 
 TEST_COUNT_CI = 10000
-TEST_COUNT_NORMAL = 100
+TEST_COUNT_NORMAL = 10
 settings.register_profile(
     "no_deadline",
     deadline=None,

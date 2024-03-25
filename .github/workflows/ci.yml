@@ -19,8 +19,6 @@ jobs:
       with:
         use_nix_profile: true
         nix_channel: nixpkgs
-    - name: mypy .
-      run: mypy .
     - name: ./coverage.sh
       run: ./coverage.sh
     - name: nix run .#ci
@@ -39,8 +37,6 @@ jobs:
       with:
         use_nix_profile: true
         nix_channel: nixpkgs
-    - name: mypy .
-      run: mypy .
     - name: ./coverage.sh
       run: ./coverage.sh
     - name: nix run .#ci

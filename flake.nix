@@ -19,32 +19,33 @@
         version = "0.0.1";
         src = ./.;
         # TODO: Use pylyzer when 1.76.0+ supported
-        jax = pypkgs.jax.overridePythonAttrs (old: {
-          doCheck = false;
-          propagatedBuildInputs = old.propagatedBuildInputs ++ [ pypkgs.jaxlib-bin ];
-        });
+        jax = pypkgs.jax.overridePythonAttrs (
+          old:
+          old
+          // {
+            doCheck = false;
+            propagatedBuildInputs = old.propagatedBuildInputs ++ [ pypkgs.jaxlib-bin ];
+          }
+        );
         propagatedBuildInputs =
           [ jax ]
           ++ (with pypkgs; [
             beartype
             jaxtyping
-            python
           ]);
         checkInputs = with pypkgs; [
+          black
           coverage
           hypothesis
+          mypy
           pytest
         ];
-        shellInputs = with pypkgs; [
-          black
-          mypy
-          python-lsp-server
-        ];
+        shellInputs = with pypkgs; [ python-lsp-server ];
         buildAndRun = exec: ''
           mkdir -p $out/bin
           mv ./* $out/
           echo '#!/usr/bin/env bash' > $out/bin/${pname}
-          echo "cd $out/src" >> $out/bin/${pname}
+          echo "cd $out" >> $out/bin/${pname}
           echo "${exec}" >> $out/bin/${pname}
           chmod +x $out/bin/${pname}
         '';
@@ -56,8 +57,13 @@
             src
             version
             ;
-          buildPhase = buildAndRun "${pypkgs.python}/bin/python $out/src/main.py";
-          checkPhase = "${pypkgs.pytest}/bin/pytest -Werror $out/src/test.py";
+          buildPhase = buildAndRun "${pypkgs.python}/bin/python $out/main.py";
+          checkPhase = ''
+            cd $out
+            black --check .
+            mypy .
+            pytest -Werror $out/test.py
+          '';
           doCheck = true;
         };
       in

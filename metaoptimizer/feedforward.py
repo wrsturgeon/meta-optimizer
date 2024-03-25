@@ -1,4 +1,4 @@
-from nontest import jit
+from metaoptimizer.nontest import jit
 
 from beartype import beartype
 from beartype.typing import Callable
