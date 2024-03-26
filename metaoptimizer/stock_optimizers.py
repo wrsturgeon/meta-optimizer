@@ -14,12 +14,14 @@ class SGD(NamedTuple):
     @jit
     def __call__(self, w: Weights, dLdw: Weights) -> tuple[Self, Weights]:
         assert w.layers() == dLdw.layers()
-        return self, w.combine(dLdw, lambda wi, di: wi - self.lr * di)
+        updated = w.combine(dLdw, lambda wi, di: wi - self.lr * di)
+        return self, updated
 
 
 @jaxtyped(typechecker=beartype)
 class Momentum(NamedTuple):
     lr: Float[Array, ""]
+
     momentum: Float[Array, ""]
     last_update: Weights
 
@@ -28,18 +30,12 @@ class Momentum(NamedTuple):
         assert (
             w.layers() == dLdw.layers() == self.last_update.layers()
         ), f"{w.layers()} == {dLdw.layers()} == {self.last_update.layers()}"
-        last_w = [
-            self.lr * di - self.momentum * lu
-            for di, lu in zip(dLdw.W, self.last_update.W)
-        ]
-        last_b = [
-            self.lr * di - self.momentum * lu
-            for di, lu in zip(dLdw.B, self.last_update.B)
-        ]
-        return self._replace(last_update=Weights(last_w, last_b)), Weights(
-            [wi - lu for wi, lu in zip(w.W, last_w)],
-            [bi - lu for bi, lu in zip(w.B, last_b)],
+        last = dLdw.combine(
+            self.last_update,
+            lambda di, lu: self.lr * di - self.momentum * lu,
         )
+        updated = w.combine(last, lambda wi, lu: wi - lu)
+        return self._replace(last_update=last), updated
 
 
 @jaxtyped(typechecker=beartype)
@@ -55,14 +51,39 @@ class Nesterov(NamedTuple):
     @jit
     def __call__(self, w: Weights, dLdw: Weights) -> tuple[Self, Weights]:
         assert (
-            w.layers() == dLdw.layers() == self.last_update.layers()
-        ), f"{w.layers()} == {dLdw.layers()} == {self.last_update.layers()}"
+            w.layers()
+            == dLdw.layers()
+            == self.last_update.layers()
+            == self.actual.layers()
+        ), f"{w.layers()} == {dLdw.layers()} == {self.last_update.layers()} == {self.actual.layers()}"
         last = dLdw.combine(
             self.last_update,
             lambda di, lu: self.lr * di - self.momentum * lu,
         )
-        actual = w.combine(last, lambda wi, lu: wi - lu)
+        updated = w.combine(last, lambda wi, lu: wi - lu)
         return (
-            self._replace(last_update=last, actual=actual),
-            actual.combine(self.last_update, lambda wi, lu: wi + self.overstep * lu),
+            self._replace(last_update=last, actual=updated),
+            updated.combine(self.last_update, lambda wi, lu: wi + self.overstep * lu),
         )
+
+
+@jaxtyped(typechecker=beartype)
+class RMSProp(NamedTuple):
+    lr: Float[Array, ""]
+
+    moving_decay: Float[Array, ""]
+    moving_average: Weights
+
+    @jit
+    def __call__(self, w: Weights, dLdw: Weights) -> tuple[Self, Weights]:
+        assert (
+            w.layers() == dLdw.layers() == self.moving_average.layers()
+        ), f"{w.layers()} == {dLdw.layers()} == {self.moving_average.layers()}"
+        squared = dLdw.map(jnp.square)
+        persistent = self.moving_average.map(lambda w: self.moving_decay * w)
+        novel = squared.map(lambda w: (1.0 - self.moving_decay) * w)
+        moving_avg = persistent.combine(novel, lambda wi, ni: wi + ni)
+        rms = moving_avg.map(jnp.sqrt)
+        update = dLdw.combine(rms, lambda di, ri: self.lr * di / ri)
+        updated = w.combine(update, lambda wi, ui: wi - ui)
+        return self._replace(moving_average=moving_avg), updated
