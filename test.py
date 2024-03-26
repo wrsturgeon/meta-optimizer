@@ -634,7 +634,12 @@ def prop_optim(optim: Callable[[Weights, Weights], tuple[Any, Weights]]):
 
 @jaxtyped(typechecker=beartype)
 def test_optim_sgd():
-    prop_optim(stock_optimizers.SGD(0.01))
+    prop_optim(stock_optimizers.SGD(lr=0.01))
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_weight_decay():
+    prop_optim(stock_optimizers.WeightDecay(lr=0.01, weight_decay=0.99))
 
 
 @jaxtyped(typechecker=beartype)

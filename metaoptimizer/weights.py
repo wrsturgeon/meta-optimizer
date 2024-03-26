@@ -20,17 +20,19 @@ class Weights(NamedTuple):
     @jit
     def map(
         self: Self,
-        f: Callable[[Float[Array, "..."]], Float[Array, "..."]],
+        fw: Callable[[Float[Array, "..."]], Float[Array, "..."]],
+        fb: Callable[[Float[Array, "..."]], Float[Array, "..."]],
     ) -> Self:
-        return self._replace(W=[f(w) for w in self.W], B=[f(b) for b in self.B])
+        return self._replace(W=[fw(w) for w in self.W], B=[fb(b) for b in self.B])
 
     @jit
     def combine(
         self: Self,
         other: Self,
-        f: Callable[[Float[Array, "..."], Float[Array, "..."]], Float[Array, "..."]],
+        fw: Callable[[Float[Array, "..."], Float[Array, "..."]], Float[Array, "..."]],
+        fb: Callable[[Float[Array, "..."], Float[Array, "..."]], Float[Array, "..."]],
     ) -> Self:
         return self._replace(
-            W=[f(a, b) for a, b in zip(self.W, other.W)],
-            B=[f(a, b) for a, b in zip(self.B, other.B)],
+            W=[fw(a, b) for a, b in zip(self.W, other.W)],
+            B=[fb(a, b) for a, b in zip(self.B, other.B)],
         )
