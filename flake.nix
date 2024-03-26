@@ -32,6 +32,7 @@
           ++ (with pypkgs; [
             beartype
             jaxtyping
+            python
           ]);
         checkInputs = with pypkgs; [
           black
