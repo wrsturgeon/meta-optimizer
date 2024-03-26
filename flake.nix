@@ -13,78 +13,101 @@
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs { inherit system; };
-        pypkgs = pkgs.python311Packages;
         pname = "meta-optimizer";
         version = "0.0.1";
         src = ./.;
+        pkgs = import nixpkgs { inherit system; };
+        pypkgs = pkgs.python311Packages;
         # TODO: Use pylyzer when 1.76.0+ supported
-        jax = pypkgs.jax.overridePythonAttrs (
-          old:
-          old
-          // {
-            doCheck = false;
-            propagatedBuildInputs = old.propagatedBuildInputs ++ [ pypkgs.jaxlib-bin ];
-          }
-        );
-        propagatedBuildInputs =
-          [ jax ]
-          ++ (with pypkgs; [
+        default-pkgs =
+          p: with p; [
+            (jax.overridePythonAttrs (
+              old:
+              old
+              // {
+                doCheck = false;
+                propagatedBuildInputs = old.propagatedBuildInputs ++ [ p.jaxlib-bin ];
+              }
+            ))
             beartype
             jaxtyping
-            python
-          ]);
-        checkInputs = with pypkgs; [
-          black
-          hypothesis
-          mypy
-          pytest
-        ];
-        shellInputs = with pypkgs; [
-          coverage
-          python-lsp-server
-        ];
-        buildAndRun = exec: ''
+          ];
+        check-pkgs =
+          p: with p; [
+            hypothesis
+            pytest
+          ];
+        ci-pkgs =
+          p: with p; [
+            black
+            coverage
+            mypy
+          ];
+        dev-pkgs = p: with p; [ python-lsp-server ];
+        lookup-pkg-sets = ps: p: builtins.concatMap (f: f p) ps;
+        python-with = ps: "${pypkgs.python.withPackages (lookup-pkg-sets ps)}/bin/python";
+        ci-script =
+          let
+            python = python-with [
+              default-pkgs
+              check-pkgs
+              ci-pkgs
+            ];
+          in
+          ''
+            set -eux
+            ${python} -m black --check .
+            ${python} -m mypy .
+            ${python} -m coverage run --omit "/nix/*" -m pytest -Werror test.py
+            ${python} -m coverage report -m
+            export COVPCT=$(${python} -m coverage report -m | tail -n 1 | tr -s " " | cut -d " " -f 4)
+            if [ "''${COVPCT}" != "100%" ]; then
+              echo "Coverage reported ''${COVPCT} overall, but we expected 100%"
+              exit 1
+            fi
+          '';
+        buildAndRun = double-quotes: exec: ''
           mkdir -p $out/bin
           mv ./* $out/
-          echo '#!/usr/bin/env bash' > $out/bin/${pname}
-          echo "cd $out" >> $out/bin/${pname}
-          echo "${exec}" >> $out/bin/${pname}
+          echo '#!${pkgs.bash}/bin/bash' > $out/bin/${pname}
+          echo ${if double-quotes then "\"${exec}\"" else "'${exec}'"} >> $out/bin/${pname}
           chmod +x $out/bin/${pname}
         '';
-        derivationSettings = {
-          inherit
-            checkInputs
-            propagatedBuildInputs
-            pname
-            src
-            version
-            ;
-          buildPhase = buildAndRun "${pypkgs.python}/bin/python $out/main.py";
-          checkPhase = ''
-            cd $out
-            black --check .
-            mypy .
-            pytest -Werror $out/test.py
-          '';
-          doCheck = true;
-        };
       in
       {
         packages = {
-          default = pkgs.stdenv.mkDerivation derivationSettings;
-          ci = pkgs.stdenv.mkDerivation (
-            derivationSettings
-            // {
-              checkPhase = ''
-                export GITHUB_CI=1
-                ${derivationSettings.checkPhase}
+          apps = builtins.mapAttrs (k: _: {
+            type = "app";
+            program = "${self.packages.${system}.${k}}/bin/${pname}";
+          }) self.packages.${system};
+          default = pkgs.stdenv.mkDerivation {
+            inherit pname src version;
+            buildPhase = buildAndRun true ''
+              cd $out
+              ${python-with [ default-pkgs ]} $out/main.py
+            '';
+            checkPhase =
+              let
+                python = python-with [
+                  default-pkgs
+                  check-pkgs
+                ];
+              in
+              ''
+                cd $out
+                ${python} -m pytest -Werror test.py
               '';
-            }
-          );
+            doCheck = true;
+          };
+          ci = pkgs.stdenv.mkDerivation {
+            inherit pname src version;
+            buildPhase = buildAndRun false ci-script;
+            checkPhase = ":";
+            doCheck = false;
+          };
         };
         devShells.default = pkgs.mkShell {
-          packages = propagatedBuildInputs ++ checkInputs ++ shellInputs;
+          packages = lookup-pkg-sets (default-pkgs ++ check-pkgs ++ ci-pkgs ++ dev-pkgs) pypkgs;
         };
       }
     );
