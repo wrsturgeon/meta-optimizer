@@ -16,8 +16,8 @@ from os import environ
 import pytest
 
 
-TEST_COUNT_CI = 1000
-TEST_COUNT_NORMAL = 10
+TEST_COUNT_CI = 10000
+TEST_COUNT_NORMAL = 100
 settings.register_profile(
     "no_deadline",
     deadline=None,
@@ -639,7 +639,7 @@ def test_optim_sgd():
 
 @jaxtyped(typechecker=beartype)
 def test_optim_weight_decay():
-    prop_optim(stock_optimizers.WeightDecay(lr=0.01, weight_decay=0.99))
+    prop_optim(stock_optimizers.WeightDecay(lr=0.01, weight_decay=0.999))
 
 
 @jaxtyped(typechecker=beartype)
@@ -680,10 +680,34 @@ def test_optim_rmsprop():
     prop_optim(
         stock_optimizers.RMSProp(
             lr=0.01,
-            moving_decay=0.9,
+            moving_square_decay=0.9,
+            moving_square=Weights(
+                [jnp.zeros([NDIM, NDIM]) for _ in range(LAYERS)],
+                [jnp.zeros([NDIM]) for _ in range(LAYERS)],
+            ),
+        )
+    )
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_adam():
+    moving_average_decay = 0.9
+    moving_square_decay = 0.999
+    prop_optim(
+        stock_optimizers.Adam(
+            lr=0.01,
+            moving_average_decay=moving_average_decay,
             moving_average=Weights(
                 [jnp.zeros([NDIM, NDIM]) for _ in range(LAYERS)],
                 [jnp.zeros([NDIM]) for _ in range(LAYERS)],
             ),
+            correction_average=moving_average_decay,
+            moving_square_decay=moving_square_decay,
+            moving_square=Weights(
+                [jnp.zeros([NDIM, NDIM]) for _ in range(LAYERS)],
+                [jnp.zeros([NDIM]) for _ in range(LAYERS)],
+            ),
+            correction_square=moving_square_decay,
+            epsilon=1e-8,
         )
     )

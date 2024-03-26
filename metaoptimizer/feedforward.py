@@ -24,15 +24,36 @@ def feedforward(
     x = x[..., jnp.newaxis]
     checkify.check(
         jnp.all(jnp.isfinite(x)),
-        "`feedforward` got an input `x` with non-finite values",
+        """
+        `feedforward` got an input `x` with non-finite values.
+        Original `x` was
+        {x}
+        """,
+        x=x,
     )
     n = w.layers()
     for i in range(n):
-        x = nl(w.W[i] @ x + w.B[i][jnp.newaxis, ..., jnp.newaxis])
+        y = nl(w.W[i] @ x + w.B[i][jnp.newaxis, ..., jnp.newaxis])
         checkify.check(
-            jnp.all(jnp.isfinite(x)),
-            f"`feedforward` produced a hidden `x` with non-finite values (after layer #{i})",
+            jnp.all(jnp.isfinite(y)),
+            """
+            `feedforward` produced a hidden `x` with non-finite values (after layer #{i}).
+            Original `x` was
+            {x}
+            `w.W[i]` was
+            {w}
+            `w.B[i]` was
+            {b}
+            After, `x` was
+            {y}
+            """,
+            i=jnp.array(i, dtype=jnp.uint32),
+            x=x,
+            w=w.W[i],
+            b=w.B[i],
+            y=y,
         )
+        x = y
     return x[..., 0]
 
 
