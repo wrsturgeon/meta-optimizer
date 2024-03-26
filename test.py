@@ -641,9 +641,28 @@ def test_optim_sgd():
 def test_optim_momentum():
     prop_optim(
         stock_optimizers.Momentum(
-            0.01,
-            0.5,
-            Weights(
+            lr=0.01,
+            momentum=0.5,
+            last_update=Weights(
+                [jnp.zeros([NDIM, NDIM]) for _ in range(LAYERS)],
+                [jnp.zeros([NDIM]) for _ in range(LAYERS)],
+            ),
+        )
+    )
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_nesterov():
+    prop_optim(
+        stock_optimizers.Nesterov(
+            lr=0.01,
+            momentum=0.5,
+            last_update=Weights(
+                [jnp.zeros([NDIM, NDIM]) for _ in range(LAYERS)],
+                [jnp.zeros([NDIM]) for _ in range(LAYERS)],
+            ),
+            overstep=0.5,
+            actual=Weights(
                 [jnp.zeros([NDIM, NDIM]) for _ in range(LAYERS)],
                 [jnp.zeros([NDIM]) for _ in range(LAYERS)],
             ),
