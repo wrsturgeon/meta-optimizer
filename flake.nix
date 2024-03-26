@@ -17,7 +17,7 @@
         version = "0.0.1";
         src = ./.;
         pkgs = import nixpkgs { inherit system; };
-        pypkgs = pkgs.python311Packages;
+        pypkgs = pkgs.python312Packages;
         # TODO: Use pylyzer when 1.76.0+ supported
         default-pkgs =
           p: with p; [

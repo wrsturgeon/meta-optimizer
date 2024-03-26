@@ -20,7 +20,7 @@ jobs:
         use_nix_profile: true
         nix_channel: nixpkgs
     - name: nix run .#ci
-      run: nix run .#ci
+      run: GITHUB_CI=1 nix run .#ci
   mac:
     runs-on: macos-latest
     steps:
@@ -36,4 +36,4 @@ jobs:
         use_nix_profile: true
         nix_channel: nixpkgs
     - name: nix run .#ci
-      run: nix run .#ci
+      run: GITHUB_CI=1 nix run .#ci
