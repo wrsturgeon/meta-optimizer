@@ -1,5 +1,4 @@
 from metaoptimizer.weights import Weights
-from metaoptimizer.optimizers import typecheck
 
 from beartype import beartype
 from beartype.typing import NamedTuple, Tuple
@@ -19,11 +18,11 @@ class State(NamedTuple):
 
 @jaxtyped(typechecker=beartype)
 def defaults() -> Params:
-    return Params(lr=jnp.full([], 0.01))
+    return Params(lr=jnp.array(0.01))
 
 
 @jaxtyped(typechecker=beartype)
-def init() -> State:
+def init(initial_weights: Weights, p: Params) -> State:
     return State()
 
 
@@ -39,6 +38,3 @@ def update(
         dLdw, lambda wi, di: wi - p.lr * di, lambda bi, di: bi - p.lr * di
     )
     return State(), updated
-
-
-typecheck(update)

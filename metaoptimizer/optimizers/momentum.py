@@ -1,5 +1,4 @@
 from metaoptimizer.weights import Weights
-from metaoptimizer.optimizers import typecheck
 
 from beartype import beartype
 from beartype.typing import NamedTuple, Tuple
@@ -10,21 +9,22 @@ from jaxtyping import jaxtyped, Array, Float
 @jaxtyped(typechecker=beartype)
 class Params(NamedTuple):
     lr: Float[Array, ""]
+    momentum: Float[Array, ""]
 
 
 @jaxtyped(typechecker=beartype)
 class State(NamedTuple):
-    pass
+    last_update: Weights
 
 
 @jaxtyped(typechecker=beartype)
 def defaults() -> Params:
-    return Params(lr=jnp.full([], 0.01))
+    return Params(lr=jnp.array(0.01), momentum=jnp.array(0.9))
 
 
 @jaxtyped(typechecker=beartype)
-def init() -> State:
-    return State()
+def init(initial_weights: Weights, p: Params) -> State:
+    return State(last_update=initial_weights.map(jnp.zeros_like, jnp.zeros_like))
 
 
 @jaxtyped(typechecker=beartype)
@@ -34,11 +34,11 @@ def update(
     w: Weights,
     dLdw: Weights,
 ) -> Tuple[State, Weights]:
-    assert w.layers() == dLdw.layers()
-    updated = w.combine(
-        dLdw, lambda wi, di: wi - p.lr * di, lambda bi, di: bi - p.lr * di
+    assert w.layers() == dLdw.layers() == s.last_update.layers()
+    last = dLdw.combine(
+        s.last_update,
+        lambda di, lu: p.lr * di - p.momentum * lu,
+        lambda di, lu: p.lr * di - p.momentum * lu,
     )
-    return State(), updated
-
-
-typecheck(update)
+    updated = w.combine(last, lambda wi, lu: wi - lu, lambda bi, lu: bi - lu)
+    return State(last_update=last), updated

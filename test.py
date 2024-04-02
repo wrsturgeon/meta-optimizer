@@ -616,7 +616,10 @@ LAYERS = 3
 def prop_optim(
     optim: Optimizer,
     opt_params: PyTree[Float[Array, "..."]],
-    opt_state: PyTree[Float[Array, "..."]],
+    opt_state_init: Callable[
+        [Weights, PyTree[Float[Array, "..."]]],
+        PyTree[Float[Array, "..."]],
+    ],
     power: Float[Array, ""] = jnp.ones([]),
 ):
     w = feedforward.feedforward_init(
@@ -632,6 +635,7 @@ def prop_optim(
     )
     err, orig_loss = eval_weights(w)
     err.throw()
+    opt_state = opt_state_init(w, opt_params)
     for _ in range(100):
         k, key = jrnd.split(key)
         x = jrnd.uniform(k, [1, NDIM])
@@ -649,115 +653,39 @@ def prop_optim(
 def test_optim_sgd():
     import metaoptimizer.optimizers.sgd as optim
 
-    prop_optim(optim.update, optim.defaults(), optim.init())
+    prop_optim(optim.update, optim.defaults(), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_weight_decay():
     import metaoptimizer.optimizers.weight_decay as optim
 
-    prop_optim(optim.update, optim.defaults(), optim.init())
+    prop_optim(optim.update, optim.defaults(), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_momentum():
     import metaoptimizer.optimizers.momentum as optim
 
-    prop_optim(optim.update, optim.defaults(), optim.init())
+    prop_optim(optim.update, optim.defaults(), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_nesterov():
     import metaoptimizer.optimizers.nesterov as optim
 
-    prop_optim(optim.update, optim.defaults(), optim.init())
+    prop_optim(optim.update, optim.defaults(), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_rmsprop():
     import metaoptimizer.optimizers.rmsprop as optim
 
-    prop_optim(optim.update, optim.defaults(), optim.init())
+    prop_optim(optim.update, optim.defaults(), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_adam():
     import metaoptimizer.optimizers.adam as optim
 
-    prop_optim(optim.update, optim.defaults(), optim.init())
-
-
-# @jaxtyped(typechecker=beartype)
-# def test_optim_weight_decay():
-#     prop_optim(stock_optimizers.WeightDecay(lr=0.01, weight_decay=0.999))
-#
-#
-# @jaxtyped(typechecker=beartype)
-# def test_optim_momentum():
-#     prop_optim(
-#         stock_optimizers.Momentum(
-#             lr=0.01,
-#             momentum=0.9,
-#             last_update=Weights(
-#                 [jnp.zeros([NDIM, NDIM]) for _ in range(LAYERS)],
-#                 [jnp.zeros([NDIM]) for _ in range(LAYERS)],
-#             ),
-#         )
-#     )
-#
-#
-# @jaxtyped(typechecker=beartype)
-# def test_optim_nesterov():
-#     prop_optim(
-#         stock_optimizers.Nesterov(
-#             lr=0.01,
-#             momentum=0.9,
-#             last_update=Weights(
-#                 [jnp.zeros([NDIM, NDIM]) for _ in range(LAYERS)],
-#                 [jnp.zeros([NDIM]) for _ in range(LAYERS)],
-#             ),
-#             overstep=0.9,
-#             actual=Weights(
-#                 [jnp.zeros([NDIM, NDIM]) for _ in range(LAYERS)],
-#                 [jnp.zeros([NDIM]) for _ in range(LAYERS)],
-#             ),
-#         )
-#     )
-#
-#
-# @jaxtyped(typechecker=beartype)
-# def test_optim_rmsprop():
-#     prop_optim(
-#         stock_optimizers.RMSProp(
-#             lr=0.01,
-#             moving_square_decay=0.9,
-#             moving_square=Weights(
-#                 [jnp.zeros([NDIM, NDIM]) for _ in range(LAYERS)],
-#                 [jnp.zeros([NDIM]) for _ in range(LAYERS)],
-#             ),
-#         )
-#     )
-#
-#
-# @jaxtyped(typechecker=beartype)
-# def test_optim_adam():
-#     moving_average_decay = 0.9
-#     moving_square_decay = 0.999
-#     prop_optim(
-#         stock_optimizers.Adam(
-#             lr=0.01,
-#             moving_average_decay=moving_average_decay,
-#             moving_average=Weights(
-#                 [jnp.zeros([NDIM, NDIM]) for _ in range(LAYERS)],
-#                 [jnp.zeros([NDIM]) for _ in range(LAYERS)],
-#             ),
-#             correction_average=moving_average_decay,
-#             moving_square_decay=moving_square_decay,
-#             moving_square=Weights(
-#                 [jnp.zeros([NDIM, NDIM]) for _ in range(LAYERS)],
-#                 [jnp.zeros([NDIM]) for _ in range(LAYERS)],
-#             ),
-#             correction_square=moving_square_decay,
-#             epsilon=1e-8,
-#         )
-#     )
+    prop_optim(optim.update, optim.defaults(), optim.init)
