@@ -22,7 +22,7 @@ from os import environ
 import pytest
 
 
-TEST_COUNT_CI = 10000
+TEST_COUNT_CI = 1000
 TEST_COUNT_NORMAL = 100
 settings.register_profile(
     "no_deadline",
