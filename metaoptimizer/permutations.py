@@ -1,13 +1,12 @@
-from metaoptimizer.nontest import jit
 from metaoptimizer.weights import Weights
 
 from beartype import beartype
+from beartype.typing import Tuple
 from jax import numpy as jnp
 from jaxtyping import jaxtyped, Array, Bool, Float, UInt
 from typing import NamedTuple
 
 
-@jit
 @jaxtyped(typechecker=beartype)
 def permute(x: Float[Array, "..."], indices: UInt[Array, "n"], axis: int) -> Array:
     # TODO: disable these assertions in production
@@ -29,7 +28,6 @@ class Permutation(NamedTuple):
     loss: Float[Array, ""]
 
 
-@jit
 @jaxtyped(typechecker=beartype)
 def score_permutation(
     Wactual: Float[Array, "n_out n_in"],
@@ -57,7 +55,6 @@ def score_permutation(
     )
 
 
-@jit
 @jaxtyped(typechecker=beartype)
 def find_permutation_rec(
     Wactual: Float[Array, "n_out n_in"],
@@ -101,7 +98,6 @@ def find_permutation_rec(
     return best
 
 
-@jit
 @jaxtyped(typechecker=beartype)
 def find_permutation(
     Wactual: Float[Array, "n_out n_in"],
@@ -143,7 +139,6 @@ def find_permutation(
     )
 
 
-@jit
 @jaxtyped(typechecker=beartype)
 def permute_hidden_layers(
     w: Weights,
@@ -160,13 +155,12 @@ def permute_hidden_layers(
     return w
 
 
-@jit
 @jaxtyped(typechecker=beartype)
 def layer_distance(
     actual: Weights,
     ideal: Weights,
     last_best: list[UInt[Array, "..."]],
-) -> tuple[Float[Array, ""], list[Permutation]]:
+) -> Tuple[Float[Array, ""], list[Permutation]]:
     """
     Compute the "true" distance between two sets of weights and biases,
     allowing permutations at every layer without changing the final output.

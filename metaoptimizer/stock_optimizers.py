@@ -1,25 +1,37 @@
 from metaoptimizer.weights import Weights
 
 from beartype import beartype
-from beartype.typing import Self
+from beartype.typing import Self, Tuple
 from jax import jit, numpy as jnp
 from jaxtyping import jaxtyped, Array, Float
 from typing import NamedTuple
 
 
 @jaxtyped(typechecker=beartype)
-class SGD(NamedTuple):
+class SGDParams(NamedTuple):
     lr: Float[Array, ""]
 
-    @jit
-    def __call__(self, w: Weights, dLdw: Weights) -> tuple[Self, Weights]:
-        assert w.layers() == dLdw.layers()
-        updated = w.combine(
-            dLdw,
-            lambda wi, di: wi - self.lr * di,
-            lambda bi, di: bi - self.lr * di,
-        )
-        return self, updated
+
+@jaxtyped(typechecker=beartype)
+class SGDState(NamedTuple):
+    pass
+
+
+@jit
+@jaxtyped(typechecker=beartype)
+def sgd(
+    p: SGDParams,
+    s: SGDState,
+    w: Weights,
+    dLdw: Weights,
+) -> Tuple[SGDState, Weights]:
+    assert w.layers() == dLdw.layers()
+    return SGDState(), w.combine(
+        dLdw, lambda wi, di: wi - p.lr * di, lambda bi, di: bi - p.lr * di
+    )
+
+
+sgd_defaults = SGDParams(lr=jnp.full([], 0.01))
 
 
 @jaxtyped(typechecker=beartype)
@@ -28,8 +40,7 @@ class WeightDecay(NamedTuple):
 
     weight_decay: Float[Array, ""]
 
-    @jit
-    def __call__(self, w: Weights, dLdw: Weights) -> tuple[Self, Weights]:
+    def __call__(self, w: Weights, dLdw: Weights) -> Tuple[Self, Weights]:
         assert w.layers() == dLdw.layers()
         updated = w.combine(
             dLdw,
@@ -46,8 +57,7 @@ class Momentum(NamedTuple):
     momentum: Float[Array, ""]
     last_update: Weights
 
-    @jit
-    def __call__(self, w: Weights, dLdw: Weights) -> tuple[Self, Weights]:
+    def __call__(self, w: Weights, dLdw: Weights) -> Tuple[Self, Weights]:
         assert (
             w.layers() == dLdw.layers() == self.last_update.layers()
         ), f"{w.layers()} == {dLdw.layers()} == {self.last_update.layers()}"
@@ -70,8 +80,7 @@ class Nesterov(NamedTuple):
     overstep: Float[Array, ""]
     actual: Weights
 
-    @jit
-    def __call__(self, w: Weights, dLdw: Weights) -> tuple[Self, Weights]:
+    def __call__(self, w: Weights, dLdw: Weights) -> Tuple[Self, Weights]:
         assert (
             w.layers()
             == dLdw.layers()
@@ -101,8 +110,7 @@ class RMSProp(NamedTuple):
     moving_square_decay: Float[Array, ""]
     moving_square: Weights
 
-    @jit
-    def __call__(self, w: Weights, dLdw: Weights) -> tuple[Self, Weights]:
+    def __call__(self, w: Weights, dLdw: Weights) -> Tuple[Self, Weights]:
         assert (
             w.layers() == dLdw.layers() == self.moving_square.layers()
         ), f"{w.layers()} == {dLdw.layers()} == {self.moving_square.layers()}"
@@ -144,8 +152,7 @@ class Adam(NamedTuple):
 
     epsilon: Float[Array, ""]
 
-    @jit
-    def __call__(self, w: Weights, dLdw: Weights) -> tuple[Self, Weights]:
+    def __call__(self, w: Weights, dLdw: Weights) -> Tuple[Self, Weights]:
         assert (
             w.layers()
             == dLdw.layers()

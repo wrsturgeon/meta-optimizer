@@ -1,6 +1,5 @@
-from metaoptimizer.nontest import jit
-
 from beartype import beartype
+from beartype.typing import Tuple
 from functools import partial
 from jax import numpy as jnp, scipy as jsp
 from jax.numpy import linalg as jla
@@ -8,7 +7,6 @@ from jax.lax import cond
 from jaxtyping import jaxtyped, Array, Float
 
 
-@partial(jit, static_argnames=["axis"])
 @jaxtyped(typechecker=beartype)
 def normalize(x: Float[Array, "..."], axis=None) -> Array:
     """
@@ -21,7 +19,6 @@ def normalize(x: Float[Array, "..."], axis=None) -> Array:
     return (x - mean) / std
 
 
-@jit
 @jaxtyped(typechecker=beartype)
 def kabsch(
     to_be_rotated: Float[Array, "batch points ndim"],
@@ -46,12 +43,11 @@ def kabsch(
     return u @ vT
 
 
-@jit
 @jaxtyped(typechecker=beartype)
 def rotate_and_compare(
     actual: Float[Array, "batch points ndim"],
     ideal: Float[Array, "batch points ndim"],
-) -> tuple[
+) -> Tuple[
     Float[Array, ""],
     Float[Array, "batch points ndim"],
     Float[Array, "batch ndim ndim"],

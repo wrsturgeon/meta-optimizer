@@ -1,5 +1,3 @@
-from metaoptimizer.nontest import jit
-
 from beartype import beartype
 from beartype.typing import Callable, Self
 from jaxtyping import jaxtyped, Array, Float
@@ -11,13 +9,11 @@ class Weights(NamedTuple):
     W: list[Float[Array, "..."]]
     B: list[Float[Array, "..."]]
 
-    @jit
     def layers(self: Self) -> int:
         n = len(self.W)
         assert len(self.B) == n
         return n
 
-    @jit
     def map(
         self: Self,
         fw: Callable[[Float[Array, "..."]], Float[Array, "..."]],
@@ -25,7 +21,6 @@ class Weights(NamedTuple):
     ) -> Self:
         return self._replace(W=[fw(w) for w in self.W], B=[fb(b) for b in self.B])
 
-    @jit
     def combine(
         self: Self,
         other: Self,

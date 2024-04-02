@@ -1,19 +1,16 @@
-from metaoptimizer.nontest import jit
 from metaoptimizer.weights import Weights
 
 from beartype import beartype
 from beartype.typing import Callable
 from functools import partial
 from jax import nn as jnn, numpy as jnp, random as jrnd
-from jax.experimental import checkify
+from jax.experimental.checkify import check
 from jax.numpy import linalg as jla
 from jaxtyping import jaxtyped, Array, Float, UInt
 
 KeyArray = UInt[Array, "n_keys"]  # <https://github.com/google/jax/issues/12706>
 
 
-@partial(jit, static_argnames=["nl"])
-@checkify.checkify
 @jaxtyped(typechecker=beartype)
 def feedforward(
     w: Weights,
@@ -22,7 +19,7 @@ def feedforward(
 ) -> Float[Array, "batch n_out"]:
     batch, ndim_in = x.shape
     x = x[..., jnp.newaxis]
-    checkify.check(
+    check(
         jnp.all(jnp.isfinite(x)),
         """
         `feedforward` got an input `x` with non-finite values.
@@ -34,7 +31,7 @@ def feedforward(
     n = w.layers()
     for i in range(n):
         y = nl(w.W[i] @ x + w.B[i][jnp.newaxis, ..., jnp.newaxis])
-        checkify.check(
+        check(
             jnp.all(jnp.isfinite(y)),
             """
             `feedforward` produced a hidden `x` with non-finite values (after layer #{i}).
@@ -57,7 +54,6 @@ def feedforward(
     return x[..., 0]
 
 
-# shouldn't be JITted b/c only run once
 @jaxtyped(typechecker=beartype)
 def feedforward_init(
     sizes: list[int],
@@ -74,7 +70,6 @@ def feedforward_init(
     return Weights(W, B)
 
 
-@jit
 @jaxtyped(typechecker=beartype)
 def rotate_weights(
     w: Weights,
