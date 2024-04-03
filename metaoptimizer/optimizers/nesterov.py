@@ -1,15 +1,17 @@
+from metaoptimizer.distributions import inverse_sigmoid
+
 from beartype import beartype
 from beartype.typing import NamedTuple, Tuple
-from jax import numpy as jnp
+from jax import nn as jnn, numpy as jnp
 from jax.tree_util import tree_map
 from jaxtyping import jaxtyped, Array, Float, PyTree
 
 
 @jaxtyped(typechecker=beartype)
 class Params(NamedTuple):
-    lr: Float[Array, ""]
-    momentum: Float[Array, ""]
-    overstep: Float[Array, ""]
+    log_lr: Float[Array, ""]
+    inv_sig_momentum: Float[Array, ""]
+    log_overstep: Float[Array, ""]
 
 
 @jaxtyped(typechecker=beartype)
@@ -20,7 +22,11 @@ class State(NamedTuple):
 
 @jaxtyped(typechecker=beartype)
 def defaults() -> Params:
-    return Params(lr=jnp.array(0.01), momentum=jnp.array(0.9), overstep=jnp.array(0.9))
+    return Params(
+        log_lr=jnp.log(0.01),
+        inv_sig_momentum=inverse_sigmoid(jnp.array(0.9)),
+        log_overstep=jnp.log(0.9),
+    )
 
 
 @jaxtyped(typechecker=beartype)
@@ -38,9 +44,12 @@ def update(
     w: PyTree[Float[Array, "..."]],
     dLdw: PyTree[Float[Array, "..."]],
 ) -> Tuple[State, PyTree[Float[Array, "..."]]]:
-    last = tree_map(lambda di, lu: p.lr * di - p.momentum * lu, dLdw, s.last_update)
+    lr = jnp.exp(p.log_lr)
+    momentum = jnn.sigmoid(p.inv_sig_momentum)
+    overstep = jnp.exp(p.log_overstep)
+    last = tree_map(lambda di, lu: lr * di - momentum * lu, dLdw, s.last_update)
     updated = tree_map(lambda wi, lu: wi - lu, w, last)
     return (
         State(last_update=last, actual=updated),
-        tree_map(lambda wi, lu: wi - p.overstep * lu, updated, last),
+        tree_map(lambda wi, lu: wi - overstep * lu, updated, last),
     )

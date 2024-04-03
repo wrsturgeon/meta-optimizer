@@ -1,15 +1,19 @@
+from metaoptimizer.distributions import inverse_sigmoid
+
 from beartype import beartype
 from beartype.typing import NamedTuple, Tuple
-from jax import numpy as jnp
-from jax.tree_util import tree_map
+from jax import nn as jnn, numpy as jnp
+from jax.experimental.checkify import check
+from jax.tree_util import tree_map, tree_reduce
 from jaxtyping import jaxtyped, Array, Float, PyTree
+import operator
 
 
 @jaxtyped(typechecker=beartype)
 class Params(NamedTuple):
-    lr: Float[Array, ""]
-    moving_square_decay: Float[Array, ""]
-    epsilon: Float[Array, ""]
+    log_lr: Float[Array, ""]
+    inv_sig_moving_square_decay: Float[Array, ""]
+    log_epsilon: Float[Array, ""]
 
 
 @jaxtyped(typechecker=beartype)
@@ -20,9 +24,9 @@ class State(NamedTuple):
 @jaxtyped(typechecker=beartype)
 def defaults() -> Params:
     return Params(
-        lr=jnp.array(0.01),
-        moving_square_decay=jnp.array(0.9),
-        epsilon=jnp.array(1e-8),
+        log_lr=jnp.log(0.01),
+        inv_sig_moving_square_decay=inverse_sigmoid(jnp.array(0.9)),
+        log_epsilon=jnp.log(1e-8),
     )
 
 
@@ -38,11 +42,19 @@ def update(
     w: PyTree[Float[Array, "..."]],
     dLdw: PyTree[Float[Array, "..."]],
 ) -> Tuple[State, PyTree[Float[Array, "..."]]]:
+    lr = jnp.exp(p.log_lr)
+    moving_square_decay = jnn.sigmoid(p.inv_sig_moving_square_decay)
+    epsilon = jnp.exp(p.log_epsilon)
     squared = tree_map(jnp.square, dLdw)
-    persistent_sq = tree_map(lambda w: p.moving_square_decay * w, s.moving_square)
-    novel_sq = tree_map(lambda w: (1.0 - p.moving_square_decay) * w, squared)
-    moving_sq = tree_map(lambda a, b: a + b, persistent_sq, novel_sq)
+    persistent_sq = tree_map(lambda w: moving_square_decay * w, s.moving_square)
+    novel_sq = tree_map(lambda w: (1.0 - moving_square_decay) * w, squared)
+    moving_sq = tree_map(operator.add, persistent_sq, novel_sq)
+    # check(
+    #     tree_reduce(operator.and_, tree_map(lambda x: jnp.all(x > 0), moving_sq)),
+    #     "{m} must be nonnegative everywhere",
+    #     m=moving_sq,
+    # )
     rms = tree_map(jnp.sqrt, moving_sq)
-    update = tree_map(lambda di, ri: p.lr * di / (ri + p.epsilon), dLdw, rms)
-    updated = tree_map(lambda wi, ui: wi - ui, w, update)
+    update = tree_map(lambda di, ri: lr * di / (ri + epsilon), dLdw, rms)
+    updated = tree_map(operator.sub, w, update)
     return State(moving_square=moving_sq), updated

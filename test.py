@@ -16,10 +16,11 @@ from hypothesis.extra import numpy as hnp
 from jax import jit, grad, nn as jnn, numpy as jnp, random as jrnd
 from jax.experimental.checkify import all_checks, checkify
 from jax.numpy import linalg as jla
-from jax.tree_util import tree_structure
+from jax.tree_util import tree_map, tree_reduce, tree_structure
 from jaxtyping import jaxtyped, Array, Float, PyTree, TypeCheckError, UInt
 from math import prod
 from numpy.typing import ArrayLike
+import operator
 from os import environ
 import pytest
 
@@ -537,7 +538,7 @@ def prop_optim(
     forward_pass: ForwardPass = partial(feedforward.feedforward, nl=jnn.gelu)
     eval_weights = jit(
         lambda weights: checkify(training.loss, errors=all_checks)(
-            weights, forward_pass, orig_x, jnp.sin(orig_x), power
+            weights, forward_pass, orig_x, jnp.sin(10 * orig_x), power
         )
     )
     err, orig_loss = eval_weights(w)
@@ -547,7 +548,7 @@ def prop_optim(
         k, key = jrnd.split(key)
         x = jrnd.normal(k, [1, NDIM])
         err, (w, opt_state, _) = training.step(
-            forward_pass, w, x, jnp.sin(x), optim, opt_params, opt_state, power
+            w, forward_pass, x, jnp.sin(10 * x), optim, opt_params, opt_state, power
         )
         err.throw()
     err, post_loss = eval_weights(w)
@@ -609,6 +610,7 @@ def prop_optim_combined(
     power: Float[Array, ""] = jnp.ones([]),
 ):
     print(f"Initl optimizer parameters: {opt_params}")
+    orig_opt_params = opt_params
     w = feedforward.feedforward_init(
         [NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42)
     )
@@ -617,7 +619,7 @@ def prop_optim_combined(
     forward_pass: ForwardPass = partial(feedforward.feedforward, nl=jnn.gelu)
     eval_weights = jit(
         lambda weights: checkify(training.loss_and_grad, errors=all_checks)(
-            weights, forward_pass, orig_x, jnp.sin(orig_x), power
+            weights, forward_pass, orig_x, jnp.sin(10 * orig_x), power
         )
     )
     err, (orig_loss, last_dLdw) = eval_weights(w)
@@ -628,10 +630,10 @@ def prop_optim_combined(
         k, key = jrnd.split(key)
         x = jrnd.normal(k, [1, NDIM])
         err, aux = training.step_combined(
-            forward_pass,
             w,
+            forward_pass,
             x,
-            jnp.sin(x),
+            jnp.sin(10 * x),
             optim,
             opt_params,
             opt_state,
@@ -647,6 +649,9 @@ def prop_optim_combined(
     err.throw()
     # make sure we learned *something*:
     assert post_loss < orig_loss
+    assert not tree_reduce(
+        operator.and_, tree_map(jnp.allclose, opt_params, orig_opt_params)
+    )
 
 
 @jaxtyped(typechecker=beartype)

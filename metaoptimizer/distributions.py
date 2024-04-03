@@ -2,6 +2,7 @@ from beartype import beartype
 from beartype.typing import Tuple
 from functools import partial
 from jax import numpy as jnp, scipy as jsp
+from jax.experimental.checkify import check
 from jax.numpy import linalg as jla
 from jax.lax import cond
 from jaxtyping import jaxtyped, Array, Float
@@ -61,3 +62,10 @@ def rotate_and_compare(
     R = kabsch(actual, ideal)
     aR = actual @ R
     return jla.norm(aR - ideal), aR, R
+
+
+@jaxtyped(typechecker=beartype)
+def inverse_sigmoid(x: Float[Array, "*n"]) -> Float[Array, "*n"]:
+    # https://stackoverflow.com/questions/10097891/inverse-logistic-sigmoid-function
+    check(jnp.all(0 < x) and jnp.all(x < 1), "{x} must be between 0 and 1", x=x)
+    return jnp.log(x / (1 - x))

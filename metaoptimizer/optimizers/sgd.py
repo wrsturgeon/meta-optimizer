@@ -7,7 +7,7 @@ from jaxtyping import jaxtyped, Array, Float, PyTree
 
 @jaxtyped(typechecker=beartype)
 class Params(NamedTuple):
-    lr: Float[Array, ""]
+    log_lr: Float[Array, ""]
 
 
 @jaxtyped(typechecker=beartype)
@@ -17,7 +17,7 @@ class State(NamedTuple):
 
 @jaxtyped(typechecker=beartype)
 def defaults() -> Params:
-    return Params(lr=jnp.array(0.01))
+    return Params(log_lr=jnp.log(0.01))
 
 
 @jaxtyped(typechecker=beartype)
@@ -32,5 +32,6 @@ def update(
     w: PyTree[Float[Array, "..."]],
     dLdw: PyTree[Float[Array, "..."]],
 ) -> Tuple[State, PyTree[Float[Array, "..."]]]:
-    updated = tree_map(lambda wi, di: wi - p.lr * di, w, dLdw)
+    lr = jnp.exp(p.log_lr)
+    updated = tree_map(lambda wi, di: wi - lr * di, w, dLdw)
     return State(), updated
