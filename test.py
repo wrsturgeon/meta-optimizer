@@ -647,7 +647,6 @@ def prop_optim_combined(
     err.throw()
     # make sure we learned *something*:
     assert post_loss < orig_loss
-    assert False
 
 
 @jaxtyped(typechecker=beartype)
