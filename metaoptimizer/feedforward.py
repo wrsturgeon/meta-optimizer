@@ -6,7 +6,7 @@ from functools import partial
 from jax import nn as jnn, numpy as jnp, random as jrnd
 from jax.experimental.checkify import check
 from jax.numpy import linalg as jla
-from jaxtyping import jaxtyped, Array, Float, UInt
+from jaxtyping import jaxtyped, Array, Float, PyTree, UInt
 
 KeyArray = UInt[Array, "n_keys"]  # <https://github.com/google/jax/issues/12706>
 
@@ -67,37 +67,4 @@ def feedforward_init(
         key, k = jrnd.split(key)
         W.append(init(k, (sizes[i], sizes[i - 1]), jnp.float32))
         B.append(jnp.zeros(sizes[i]))
-    return Weights(W, B)
-
-
-@jaxtyped(typechecker=beartype)
-def rotate_weights(
-    w: Weights,
-    R: list[Float[Array, "..."]],
-) -> Weights:
-    assert isinstance(R, list)
-    n = len(R)
-    assert w.layers() == n + 1
-    # Note that "permutations" should occur only vertically,
-    # since, in `Wx + B`, horizontal indices of `W`
-    # track indices of the column-vector `x`.
-    # So we're looking for `RW` instead of `WR`.
-    for i in range(n):
-        w.W[i] = R[i] @ w.W[i]
-        w.B[i] = R[i] @ w.B[i]
-        RT = R[i].T
-        Rinv = jla.inv(R[i])
-        inv_diff = jnp.abs(RT - Rinv)
-        assert jnp.all(inv_diff < 0.01)
-        w.W[-1] = R[i].T @ w.W[-1]
-        # B[-1] = R[i].T @ B[-1]
-    return w
-
-
-# TODO: Try using ML to find rotation matrices s.t.
-# each rotation matrix minimizes distance to the true weights
-# but all matrices, taken together, produce an identity matrix
-# (so the output indices really mean what they should,
-# instead of a permutation thereof).
-# Right now, we're just unilaterally reverse-rotating the last `W`,
-# which is probably far from ideal but much faster.
+    return Weights(W=W, B=B)

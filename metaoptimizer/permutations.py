@@ -3,7 +3,7 @@ from metaoptimizer.weights import Weights
 from beartype import beartype
 from beartype.typing import Tuple
 from jax import numpy as jnp
-from jaxtyping import jaxtyped, Array, Bool, Float, UInt
+from jaxtyping import jaxtyped, Array, Bool, Float, PyTree, UInt
 from typing import NamedTuple
 
 
@@ -143,7 +143,7 @@ def find_permutation(
 def permute_hidden_layers(
     w: Weights,
     ps: list[UInt[Array, "..."]],
-) -> Weights:
+) -> PyTree[Float[Array, "..."]]:
     """Permute hidden layers' columns locally without changing the output of a network."""
     n = len(ps)
     assert w.layers() == n + 1
@@ -157,8 +157,8 @@ def permute_hidden_layers(
 
 @jaxtyped(typechecker=beartype)
 def layer_distance(
-    actual: Weights,
-    ideal: Weights,
+    actual: PyTree[Float[Array, "..."]],
+    ideal: PyTree[Float[Array, "..."]],
     last_best: list[UInt[Array, "..."]],
 ) -> Tuple[Float[Array, ""], list[Permutation]]:
     """

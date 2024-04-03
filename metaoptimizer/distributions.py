@@ -16,7 +16,7 @@ def normalize(x: Float[Array, "..."], axis=None) -> Array:
     """
     mean = jnp.mean(x, axis=axis, keepdims=True)
     std = jnp.std(x, axis=axis, keepdims=True)
-    return (x - mean) / std
+    return (x - mean) / (std + 1e-8)
 
 
 @jaxtyped(typechecker=beartype)

@@ -1,9 +1,8 @@
-from metaoptimizer.weights import Weights
-
 from beartype import beartype
 from beartype.typing import NamedTuple, Tuple
 from jax import numpy as jnp
-from jaxtyping import jaxtyped, Array, Float
+from jax.tree_util import tree_map, tree_structure
+from jaxtyping import jaxtyped, Array, Float, PyTree
 
 
 @jaxtyped(typechecker=beartype)
@@ -22,7 +21,7 @@ def defaults() -> Params:
 
 
 @jaxtyped(typechecker=beartype)
-def init(initial_weights: Weights, p: Params) -> State:
+def init(initial_weights: PyTree[Float[Array, "..."]], p: Params) -> State:
     return State()
 
 
@@ -30,11 +29,8 @@ def init(initial_weights: Weights, p: Params) -> State:
 def update(
     p: Params,
     s: State,
-    w: Weights,
-    dLdw: Weights,
-) -> Tuple[State, Weights]:
-    assert w.layers() == dLdw.layers()
-    updated = w.combine(
-        dLdw, lambda wi, di: wi - p.lr * di, lambda bi, di: bi - p.lr * di
-    )
+    w: PyTree[Float[Array, "..."]],
+    dLdw: PyTree[Float[Array, "..."]],
+) -> Tuple[State, PyTree[Float[Array, "..."]]]:
+    updated = tree_map(lambda wi, di: wi - p.lr * di, w, dLdw)
     return State(), updated

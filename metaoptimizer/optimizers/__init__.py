@@ -1,5 +1,3 @@
-from metaoptimizer.weights import Weights
-
 from beartype.typing import Callable, Tuple
 from jaxtyping import Array, Float, PyTree
 
@@ -7,10 +5,10 @@ from jaxtyping import Array, Float, PyTree
 # TODO: Why don't named annotations like "P" & "S" work here?
 Optimizer = Callable[
     [
+        PyTree[Float[Array, ""]],
         PyTree[Float[Array, "..."]],
         PyTree[Float[Array, "..."]],
-        Weights,
-        Weights,
+        PyTree[Float[Array, "..."]],
     ],
-    Tuple[PyTree[Float[Array, "..."]], Weights],
+    Tuple[PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
 ]

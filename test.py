@@ -4,8 +4,9 @@ from metaoptimizer import (
     permutations,
     training,
 )
-from metaoptimizer.weights import Weights
 from metaoptimizer.optimizers import Optimizer
+from metaoptimizer.training import ForwardPass
+from metaoptimizer.weights import Weights
 
 from beartype import beartype
 from beartype.typing import Any, Callable, Protocol, Tuple
@@ -15,6 +16,7 @@ from hypothesis.extra import numpy as hnp
 from jax import jit, grad, nn as jnn, numpy as jnp, random as jrnd
 from jax.experimental.checkify import all_checks, checkify
 from jax.numpy import linalg as jla
+from jax.tree_util import tree_structure
 from jaxtyping import jaxtyped, Array, Float, PyTree, TypeCheckError, UInt
 from math import prod
 from numpy.typing import ArrayLike
@@ -23,7 +25,7 @@ import pytest
 
 
 TEST_COUNT_CI = 1000
-TEST_COUNT_NORMAL = 100
+TEST_COUNT_NORMAL = 10
 settings.register_profile(
     "no_deadline",
     deadline=None,
@@ -49,15 +51,6 @@ else:  # pragma: no cover
     )
     settings.load_profile("no_deadline")
     TEST_COUNT = TEST_COUNT_NORMAL
-
-
-def test_weights_map():
-    weights = Weights(W=[jnp.zeros([3, 3])], B=[jnp.zeros([3])])
-    weights = weights.map(lambda w: w + 1, lambda b: b - 1)
-    for w in weights.W:
-        assert jnp.allclose(w, jnp.ones_like(w))
-    for b in weights.B:
-        assert jnp.allclose(b, -jnp.ones_like(b))
 
 
 @jaxtyped(typechecker=beartype)
@@ -287,92 +280,6 @@ def test_feedforward_init_1():
             ]
         ),
     )
-
-
-@jaxtyped(typechecker=beartype)
-def prop_rotating_weights(
-    w: Weights,
-    x: Float[Array, "batch ndim"],
-    angles: list[Float[Array, "..."]],
-):
-    assert len(angles) == w.layers()
-    if not all([jnp.all(jnp.isfinite(angle)) for angle in angles]):
-        return
-    angle_array = jnp.array(angles)[:, jnp.newaxis]
-    R = list(distributions.kabsch(angle_array[:-1], angle_array[1:]))  # batched!
-    wR = feedforward.rotate_weights(w, R)
-    y = feedforward.feedforward(w, x, nl=lambda z: z)
-    yR = feedforward.feedforward(wR, x, nl=lambda z: z)
-    assert jnp.allclose(y, yR)
-
-
-@jaxtyped(typechecker=beartype)
-def test_rotating_weights_1():
-    prop_rotating_weights(
-        Weights([jnp.eye(3, 3)], [jnp.eye(1, 3)[0]]),
-        jnp.eye(3, 3),
-        [jnp.array([1, 0, 0], dtype=jnp.float32)],
-    )
-
-
-@jaxtyped(typechecker=beartype)
-def test_rotating_weights_2():
-    prop_rotating_weights(
-        Weights([jnp.eye(3, 3), jnp.eye(3, 3)], [jnp.eye(1, 3)[0], jnp.eye(1, 3)[0]]),
-        jnp.eye(3, 3),
-        [
-            jnp.array([1, 0, 0], dtype=jnp.float32),
-            jnp.array([0, 1, 0], dtype=jnp.float32),
-        ],
-    )
-
-
-@jaxtyped(typechecker=beartype)
-def test_rotating_weights_3():
-    prop_rotating_weights(
-        w=Weights(list(jnp.ones([2, 3, 3])), list(jnp.zeros([2, 3]))),
-        x=jnp.ones([1, 3]),
-        angles=[
-            jnp.array([0.0, 1.0, 1.0], dtype=jnp.float32),
-            jnp.array([1.0, 1.0, 1.0], dtype=jnp.float32),
-        ],
-    )
-
-
-@jaxtyped(typechecker=beartype)
-def test_rotating_weights_4():
-    prop_rotating_weights(
-        w=Weights([jnp.zeros([0, 0, 0])], [jnp.zeros([0, 0])]),
-        x=jnp.array([[]]),
-        angles=[jnp.array([jnp.inf])],
-    )
-
-
-@jaxtyped(typechecker=beartype)
-def test_rotating_weights_prop_fake():
-    for seed in range(TEST_COUNT):
-        k1, k2, k3 = jrnd.split(jrnd.PRNGKey(seed), 3)
-        W = list(jnn.initializers.he_normal()(k1, [2, 3, 3]))
-        B = list(jnp.zeros([2, 3]))
-        x = jrnd.normal(k2, [3, 3])
-        angles = list(jrnd.normal(k3, [2, 3]))
-        prop_rotating_weights(Weights(W, B), x, angles)
-
-
-# NOTE: THIS TAKES OVER TEN HOURS; use the above (identical but w/o shrinking) instead
-# @given(
-#     hnp.arrays(dtype=jnp.float32, shape=(layers, ndim, ndim)),
-#     hnp.arrays(dtype=jnp.float32, shape=(layers, ndim)),
-#     hnp.arrays(dtype=jnp.float32, shape=(ndim)),
-#     hnp.arrays(dtype=jnp.float32, shape=(layers, ndim)),
-# )
-# def test_rotating_weights_prop_1_layer(
-#     W: Array,
-#     B: Array,
-#     x: Array,
-#     angles: Array,
-# ):
-#     prop_rotating_weights(Weights(list(W), list(B)), x, list(angles))
 
 
 # TODO: test varying dimensionality across layers
@@ -615,9 +522,9 @@ LAYERS = 3
 @jaxtyped(typechecker=beartype)
 def prop_optim(
     optim: Optimizer,
-    opt_params: PyTree[Float[Array, "..."]],
+    opt_params: PyTree[Float[Array, ""]],
     opt_state_init: Callable[
-        [Weights, PyTree[Float[Array, "..."]]],
+        [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
         PyTree[Float[Array, "..."]],
     ],
     power: Float[Array, ""] = jnp.ones([]),
@@ -626,11 +533,11 @@ def prop_optim(
         [NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42)
     )
     key = jrnd.PRNGKey(42)
-    orig_x = jrnd.uniform(key, [1, NDIM])
-    forward_pass = partial(feedforward.feedforward, nl=jnn.gelu)
+    orig_x = jrnd.normal(key, [1, NDIM])
+    forward_pass: ForwardPass = partial(feedforward.feedforward, nl=jnn.gelu)
     eval_weights = jit(
         lambda weights: checkify(training.loss, errors=all_checks)(
-            forward_pass, weights, orig_x, jnp.sin(orig_x), power
+            weights, forward_pass, orig_x, jnp.sin(orig_x), power
         )
     )
     err, orig_loss = eval_weights(w)
@@ -638,8 +545,8 @@ def prop_optim(
     opt_state = opt_state_init(w, opt_params)
     for _ in range(100):
         k, key = jrnd.split(key)
-        x = jrnd.uniform(k, [1, NDIM])
-        err, (opt_state, w, _) = training.step(
+        x = jrnd.normal(k, [1, NDIM])
+        err, (w, opt_state, _) = training.step(
             forward_pass, w, x, jnp.sin(x), optim, opt_params, opt_state, power
         )
         err.throw()
@@ -689,3 +596,97 @@ def test_optim_adam():
     import metaoptimizer.optimizers.adam as optim
 
     prop_optim(optim.update, optim.defaults(), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def prop_optim_combined(
+    optim: Optimizer,
+    opt_params: PyTree[Float[Array, ""]],
+    opt_state_init: Callable[
+        [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
+        PyTree[Float[Array, "..."]],
+    ],
+    power: Float[Array, ""] = jnp.ones([]),
+):
+    print(f"Initl optimizer parameters: {opt_params}")
+    w = feedforward.feedforward_init(
+        [NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42)
+    )
+    key = jrnd.PRNGKey(42)
+    orig_x = jrnd.normal(key, [1, NDIM])
+    forward_pass: ForwardPass = partial(feedforward.feedforward, nl=jnn.gelu)
+    eval_weights = jit(
+        lambda weights: checkify(training.loss_and_grad, errors=all_checks)(
+            weights, forward_pass, orig_x, jnp.sin(orig_x), power
+        )
+    )
+    err, (orig_loss, last_dLdw) = eval_weights(w)
+    err.throw()
+    opt_state = opt_state_init(w, opt_params)
+    meta_opt_state = opt_state_init(opt_params, opt_params)
+    for _ in range(100):
+        k, key = jrnd.split(key)
+        x = jrnd.normal(k, [1, NDIM])
+        err, aux = training.step_combined(
+            forward_pass,
+            w,
+            x,
+            jnp.sin(x),
+            optim,
+            opt_params,
+            opt_state,
+            meta_opt_state,
+            last_dLdw,
+            power,
+        )
+        err.throw()
+        w, opt_state, opt_params, meta_opt_state, _, last_dLdw = aux
+        print(f"Intrm optimizer parameters: {opt_params}")
+    print(f"Final optimizer parameters: {opt_params}")
+    err, (post_loss, _) = eval_weights(w)
+    err.throw()
+    # make sure we learned *something*:
+    assert post_loss < orig_loss
+    assert False
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_combined_sgd():
+    import metaoptimizer.optimizers.sgd as optim
+
+    prop_optim_combined(optim.update, optim.defaults(), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_combined_weight_decay():
+    import metaoptimizer.optimizers.weight_decay as optim
+
+    prop_optim_combined(optim.update, optim.defaults(), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_combined_momentum():
+    import metaoptimizer.optimizers.momentum as optim
+
+    prop_optim_combined(optim.update, optim.defaults(), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_combined_nesterov():
+    import metaoptimizer.optimizers.nesterov as optim
+
+    prop_optim_combined(optim.update, optim.defaults(), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_combined_rmsprop():
+    import metaoptimizer.optimizers.rmsprop as optim
+
+    prop_optim_combined(optim.update, optim.defaults(), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_combined_adam():
+    import metaoptimizer.optimizers.adam as optim
+
+    prop_optim_combined(optim.update, optim.defaults(), optim.init)

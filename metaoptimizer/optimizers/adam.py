@@ -1,9 +1,8 @@
-from metaoptimizer.weights import Weights
-
 from beartype import beartype
 from beartype.typing import NamedTuple, Tuple
 from jax import numpy as jnp
-from jaxtyping import jaxtyped, Array, Float
+from jax.tree_util import tree_map
+from jaxtyping import jaxtyped, Array, Float, PyTree
 
 
 @jaxtyped(typechecker=beartype)
@@ -16,9 +15,9 @@ class Params(NamedTuple):
 
 @jaxtyped(typechecker=beartype)
 class State(NamedTuple):
-    moving_average: Weights
+    moving_average: PyTree[Float[Array, "..."]]
     correction_average: Float[Array, ""]
-    moving_square: Weights
+    moving_square: PyTree[Float[Array, "..."]]
     correction_square: Float[Array, ""]
 
 
@@ -33,11 +32,11 @@ def defaults() -> Params:
 
 
 @jaxtyped(typechecker=beartype)
-def init(initial_weights: Weights, p: Params) -> State:
+def init(initial_weights: PyTree[Float[Array, "..."]], p: Params) -> State:
     return State(
-        moving_average=initial_weights.map(jnp.zeros_like, jnp.zeros_like),
+        moving_average=tree_map(jnp.zeros_like, initial_weights),
         correction_average=p.moving_average_decay,
-        moving_square=initial_weights.map(jnp.zeros_like, jnp.zeros_like),
+        moving_square=tree_map(jnp.zeros_like, initial_weights),
         correction_square=p.moving_square_decay,
     )
 
@@ -46,63 +45,37 @@ def init(initial_weights: Weights, p: Params) -> State:
 def update(
     p: Params,
     s: State,
-    w: Weights,
-    dLdw: Weights,
-) -> Tuple[State, Weights]:
-    assert (
-        w.layers()
-        == dLdw.layers()
-        == s.moving_average.layers()
-        == s.moving_square.layers()
-    )
-    persistent_avg = s.moving_average.map(
-        lambda w: p.moving_average_decay * w,
-        lambda b: p.moving_average_decay * b,
-    )
-    novel_avg = dLdw.map(
-        lambda w: (1.0 - p.moving_average_decay) * w,
-        lambda b: (1.0 - p.moving_average_decay) * b,
-    )
-    raw_moving_avg = persistent_avg.combine(
-        novel_avg,
-        lambda wi, ni: wi + ni,
-        lambda bi, ni: bi + ni,
-    )
-    moving_avg = raw_moving_avg.map(
-        lambda wi: wi / (1.0 - s.correction_average),
-        lambda wi: wi / (1.0 - s.correction_average),
-    )
-    squared = dLdw.map(jnp.square, jnp.square)
-    persistent_sq = s.moving_square.map(
-        lambda w: p.moving_square_decay * w,
-        lambda b: p.moving_square_decay * b,
-    )
-    novel_sq = squared.map(
-        lambda w: (1.0 - p.moving_square_decay) * w,
-        lambda b: (1.0 - p.moving_square_decay) * b,
-    )
-    raw_moving_sq = persistent_sq.combine(
-        novel_sq,
-        lambda wi, ni: wi + ni,
-        lambda bi, ni: bi + ni,
-    )
-    moving_sq = raw_moving_sq.map(
-        lambda wi: wi / (1.0 - s.correction_square),
-        lambda wi: wi / (1.0 - s.correction_square),
-    )
-    rms = moving_sq.map(jnp.sqrt, jnp.sqrt)
-    update = moving_avg.combine(
-        rms,
-        lambda mi, vi: p.lr * mi / (vi + p.epsilon),
-        lambda mi, vi: p.lr * mi / (vi + p.epsilon),
-    )
-    updated = w.combine(update, lambda wi, ui: wi - ui, lambda bi, ui: bi - ui)
+    w: PyTree[Float[Array, "..."]],
+    dLdw: PyTree[Float[Array, "..."]],
+) -> Tuple[State, PyTree[Float[Array, "..."]]]:
+    persistent_avg = tree_map(lambda w: p.moving_average_decay * w, s.moving_average)
+    novel_avg = tree_map(lambda w: (1.0 - p.moving_average_decay) * w, dLdw)
+    raw_moving_avg = tree_map(lambda a, b: a + b, persistent_avg, novel_avg)
+    moving_avg = tree_map(lambda wi: wi / (1.0 - s.correction_average), raw_moving_avg)
+    squared = tree_map(jnp.square, dLdw)
+    persistent_sq = tree_map(lambda w: p.moving_square_decay * w, s.moving_square)
+    novel_sq = tree_map(lambda w: (1.0 - p.moving_square_decay) * w, squared)
+    raw_moving_sq = tree_map(lambda a, b: a + b, persistent_sq, novel_sq)
+    moving_sq = tree_map(lambda wi: wi / (1.0 - s.correction_square), raw_moving_sq)
+    rms = tree_map(jnp.sqrt, moving_sq)
+    update = tree_map(lambda mi, vi: p.lr * mi / (vi + p.epsilon), moving_avg, rms)
+    updated = tree_map(lambda wi, ui: wi - ui, w, update)
     return (
         State(
             moving_average=raw_moving_avg,
-            correction_average=s.correction_average * p.moving_average_decay,
+            correction_average=s.correction_average
+            * jnp.clip(
+                p.moving_average_decay,
+                a_min=jnp.zeros_like(p.moving_average_decay),
+                a_max=jnp.ones_like(p.moving_average_decay),
+            ),
             moving_square=raw_moving_sq,
-            correction_square=s.correction_square * p.moving_square_decay,
+            correction_square=s.correction_square
+            * jnp.clip(
+                p.moving_square_decay,
+                a_min=jnp.zeros_like(p.moving_square_decay),
+                a_max=jnp.ones_like(p.moving_square_decay),
+            ),
         ),
         updated,
     )
