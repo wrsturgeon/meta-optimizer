@@ -1,8 +1,11 @@
 from metaoptimizer.weights import Weights
 
 from beartype import beartype
-from beartype.typing import Tuple
-from jax import numpy as jnp
+from beartype.typing import List, Tuple
+from functools import partial
+from jax import nn as jnn, numpy as jnp, pmap
+from jax.experimental.checkify import check
+from jax.lax import cond
 from jaxtyping import jaxtyped, Array, Bool, Float, PyTree, UInt
 from typing import NamedTuple
 
@@ -11,11 +14,25 @@ from typing import NamedTuple
 def permute(x: Float[Array, "..."], indices: UInt[Array, "n"], axis: int) -> Array:
     # TODO: disable these assertions in production
     n = x.shape[axis]
-    assert indices.shape == (n,)
-    # assert jnp.all(indices >= 0) # implicit in the type signature
-    assert jnp.all(indices < n)
-    for i in range(n):
-        assert not jnp.isin(indices[i], indices[:i])
+    assert indices.shape == (n,)  # needs to be checked only once
+    check(
+        jnp.all(indices >= 0),
+        "{indices} must be nonnegative everywhere",
+        indices=indices,
+    )  # implicit in the type signature
+    check(
+        jnp.all(indices < n),
+        "{indices} must be less than {n} everywhere",
+        indices=indices,
+        n=jnp.array(n),
+    )
+    for i in range(indices.size):
+        check(
+            jnp.logical_not(jnp.isin(indices[i], indices[:i])),
+            "Each element in {indices} must be unique (#{i} is not)",
+            indices=indices,
+            i=jnp.array(i),
+        )
     return jnp.apply_along_axis(lambda z: z[indices], axis, x)
 
 
@@ -26,123 +43,121 @@ class Permutation(NamedTuple):
     indices: UInt[Array, "n"]
     flip: Bool[Array, "n"]
     loss: Float[Array, ""]
-
-
-@jaxtyped(typechecker=beartype)
-def score_permutation(
-    Wactual: Float[Array, "n_out n_in"],
-    Bactual: Float[Array, "n_out"],
-    Wideal: Float[Array, "n_out n_in"],
-    Bideal: Float[Array, "n_out"],
-    indices: UInt[Array, "n_out"],
-) -> Permutation:
-    n_out, n_in = Wactual.shape
-    assert all([0 <= i < n_out for i in indices])
-    assert all([i not in indices[:i] for i in indices])
-    assert jnp.allclose(1, jnp.mean(jnp.square(Wactual), axis=1))
-    assert jnp.allclose(1, jnp.mean(jnp.square(Wideal), axis=1))
-    Wperm = permute(Wactual, indices, 0)
-    Bperm = permute(Bactual, indices, 0)
-    loss_orig = jnp.sum(jnp.square(Wideal - Wperm), axis=1) + jnp.square(Bideal - Bperm)
-    loss_flip = jnp.sum(jnp.square(Wideal + Wperm), axis=1) + jnp.square(Bideal + Bperm)
-    assert loss_orig.shape == loss_flip.shape == (n_out,)
-    flip = jnp.array(jnp.argmin(jnp.array([loss_orig, loss_flip]), axis=0), dtype=bool)
-    assert flip.shape == (n_out,)
-    return Permutation(
-        indices=indices,
-        flip=flip,
-        loss=jnp.sum(jnp.where(flip, loss_orig, loss_flip)),
-    )
+    # TODO: REPLACE `flip` WITH GENERALIZED +/- COEFFICIENTS (VERY NECESSARY)
 
 
 @jaxtyped(typechecker=beartype)
 def find_permutation_rec(
-    Wactual: Float[Array, "n_out n_in"],
-    Bactual: Float[Array, "n_out"],
-    Wideal: Float[Array, "n_out n_in"],
-    Bideal: Float[Array, "n_out"],
-    best: Permutation,
-    acc: Permutation,
+    actual: Float[Array, "n ..."],
+    ideal: Float[Array, "n ..."],
+    rowwise: Float[Array, "n n"],
+    flip: Bool[Array, "n n"],
 ) -> Permutation:
-    n_out, n_in = Wactual.shape
-    assert best.indices.shape == best.flip.shape == (n_out,)
-    (acc_len,) = acc.indices.shape
-    assert acc.flip.shape == (acc_len,)
-    if acc_len >= n_out:
-        assert acc_len == n_out
-        return acc
-    # implicit else
-    w_actual = Wactual[acc_len]
-    b_actual = Bactual[acc_len]
-    # TODO: Breadth-first search away from `best` instead of simple iteration
-    for i in range(n_out):
-        if i not in acc.indices:
-            w_ideal = Wideal[i]
-            b_ideal = Bideal[i]
-            indices = jnp.append(acc.indices, jnp.array(i, dtype=jnp.uint32))
-            loss_orig = jnp.sum(jnp.square(w_ideal - w_actual)) + jnp.square(
-                b_ideal - b_actual
-            )
-            loss_flip = jnp.sum(jnp.square(w_ideal + w_actual)) + jnp.square(
-                b_ideal + b_actual
-            )
-            flip = jnp.append(
-                acc.flip, jnp.array(loss_flip < loss_orig, dtype=jnp.bool)
-            )
-            loss = acc.loss + jnp.min(jnp.array([loss_orig, loss_flip]))
-            if loss < best.loss:
-                current = Permutation(indices=indices, flip=flip, loss=loss)
-                best = find_permutation_rec(
-                    Wactual, Bactual, Wideal, Bideal, best, current
-                )
+    # Note that, in the last two matrices above,
+    # the 1st axis represents `_actual`, and
+    # the 2nd axis represents `_ideal`, so
+    # `rowwise[i, j, k]` is the distance between
+    # `actual[i]` and `ideal[j]` (w/ the former flipped iff `k`).
+    # Note, further, that we're permuting `actual`,
+    # so we should really only ever care about `actual[n]`
+    # where `n` is the recursive depth thus far.
+    # In other words, we can just delete the top row
+    # in each recursive call and not keep track of `n`.
+
+    n = actual.shape[0]
+
+    if n == 0:
+        return Permutation(
+            indices=jnp.array([], dtype=jnp.uint32),
+            flip=jnp.array([], dtype=jnp.bool),
+            loss=jnp.array(0.0, dtype=jnp.float32),
+        )
+
+    # Basic idea is to select the first index of the final permutation,
+    # remove the element at that index from the array we'll work with,
+    # recurse, increment all indices greater than the one we chose,
+    # then `cons` it onto the first index we just chose.
+    @jaxtyped(typechecker=beartype)
+    def recurse_on_index(i: int) -> Permutation:
+        def without_i(x):
+            return jnp.concat([x[:i], x[(i + 1) :]])
+
+        def without2d(x):
+            # See the comment at the top of this function body
+            # for an explanation of `[1:, ...]`
+            return jnp.concat([x[1:, :i], x[1:, (i + 1) :]], axis=1)
+
+        recurse = find_permutation_rec(
+            without_i(actual),
+            without_i(ideal),
+            without2d(rowwise),
+            without2d(flip),
+        )
+        indices = recurse.indices
+        indices = jnp.where(indices < i, indices, indices + 1)
+        indices = jnp.concat([jnp.array([i], dtype=jnp.uint32), indices])
+        return Permutation(
+            indices=indices,
+            flip=jnp.concat([flip[0, i, None], recurse.flip]),
+            loss=recurse.loss + rowwise[0, i],
+        )
+
+    # TODO: Would `vmap`/`pmap` work better? (it would have to store everything...)
+    best = recurse_on_index(0)
+    for i in range(1, n):
+        new = recurse_on_index(i)
+        best = cond(new.loss < best.loss, lambda: new, lambda: best)
     return best
 
 
 @jaxtyped(typechecker=beartype)
 def find_permutation(
-    Wactual: Float[Array, "n_out n_in"],
-    Bactual: Float[Array, "n_out"],
-    Wideal: Float[Array, "n_out n_in"],
-    Bideal: Float[Array, "n_out"],
-    last_best: UInt[Array, "n_out"],
+    actual: Float[Array, "n ..."],
+    ideal: Float[Array, "n ..."],
 ) -> Permutation:
     """
     Exhaustive search for layer-wise permutations minimizing a given loss
     that nonetheless, when all applied in order, reverse any intermediate permutations
     and output the correct indices in their original positions.
-    This not quite as bad as naïve brute-force search (unfortunately close), since
-    we maintain a running best-yet loss and short-circuit anything above it.
-    Better yet, since these matrices should change slowly,
-    we initialize the best-yet loss with the
-    best matrix from the last step.
     """
-    n_out, n_in = Wactual.shape
-    Sactual = jnp.sqrt(jnp.mean(jnp.square(Wactual), axis=1, keepdims=True))
-    assert Sactual.shape == (n_out, 1)
-    Wactual = Wactual.at[...].divide(Sactual)
-    Bactual = Bactual.at[...].divide(Sactual[:, 0])
-    Sideal = jnp.sqrt(jnp.mean(jnp.square(Wideal), axis=1, keepdims=True))
-    assert Sideal.shape == (n_out, 1)
-    Wideal = Wideal.at[...].divide(Sideal)
-    Bideal = Bideal.at[...].divide(Sideal[:, 0])
-    return find_permutation_rec(
-        Wactual,
-        Bactual,
-        Wideal,
-        Bideal,
-        score_permutation(Wactual, Bactual, Wideal, Bactual, last_best),
-        Permutation(
-            jnp.array([], dtype=jnp.uint32),
-            jnp.array([], dtype=jnp.bool),
-            jnp.array(0, dtype=jnp.float32),
-        ),
+    n = actual.shape[0]
+    actual = actual.reshape(n, -1)
+    ideal = ideal.reshape(n, -1)
+    actual = actual / jnp.sqrt(jnp.mean(jnp.square(actual), axis=1, keepdims=True))
+    ideal = ideal / jnp.sqrt(jnp.mean(jnp.square(ideal), axis=1, keepdims=True))
+
+    # Create a matrix distancing each row from each other row and its negation:
+    stack_neg = lambda x: jnp.stack([x, -x], axis=1)[:, jnp.newaxis]
+    rowwise = jnp.abs(ideal[jnp.newaxis, :, jnp.newaxis] - stack_neg(actual))
+    assert rowwise.shape[:3] == (n, n, 2)
+    rowwise = jnp.sum(rowwise.reshape(n, n, 2, -1), axis=-1)
+    assert rowwise.shape == (n, n, 2)
+
+    flip = jnp.array(jnp.argmin(rowwise, axis=-1), dtype=jnp.bool)
+    assert flip.shape == (n, n), f"{flip.shape} =/= {(n, n)}"
+    rowwise = jnp.where(flip, rowwise[..., 1], rowwise[..., 0])
+    assert rowwise.shape == (n, n), f"{rowwise.shape} =/= {(n, n)}"
+
+    return find_permutation_rec(actual, ideal, rowwise, flip)
+
+
+@jaxtyped(typechecker=beartype)
+def find_permutation_weights(
+    Wactual: Float[Array, "n_out n_in"],
+    Bactual: Float[Array, "n_out"],
+    Wideal: Float[Array, "n_out n_in"],
+    Bideal: Float[Array, "n_out"],
+) -> Permutation:
+    return find_permutation(
+        jnp.concat([Wactual, Bactual[..., jnp.newaxis]], axis=-1),
+        jnp.concat([Wideal, Bideal[..., jnp.newaxis]], axis=-1),
     )
 
 
 @jaxtyped(typechecker=beartype)
 def permute_hidden_layers(
     w: Weights,
-    ps: list[UInt[Array, "..."]],
+    ps: List[UInt[Array, "..."]],
 ) -> PyTree[Float[Array, "..."]]:
     """Permute hidden layers' columns locally without changing the output of a network."""
     n = len(ps)
@@ -157,10 +172,9 @@ def permute_hidden_layers(
 
 @jaxtyped(typechecker=beartype)
 def layer_distance(
-    actual: PyTree[Float[Array, "..."]],
-    ideal: PyTree[Float[Array, "..."]],
-    last_best: list[UInt[Array, "..."]],
-) -> Tuple[Float[Array, ""], list[Permutation]]:
+    actual: Weights,
+    ideal: Weights,
+) -> Tuple[Float[Array, ""], List[Permutation]]:
     """
     Compute the "true" distance between two sets of weights and biases,
     allowing permutations at every layer without changing the final output.
@@ -176,9 +190,15 @@ def layer_distance(
     TODO: Investigate the above . . . if you have the compute to do so.
     """
     n = actual.layers()
-    assert ideal.layers() == len(last_best) + 1 == n
+    assert ideal.layers() == n, f"{ideal.layers()} =/= {n}"
     ps = [
-        find_permutation(wa, ba, wi, bi, lb)
-        for wa, ba, wi, bi, lb in zip(actual.W, actual.B, ideal.W, ideal.B, last_best)
+        find_permutation_weights(wa, ba, wi, bi)
+        for wa, ba, wi, bi in zip(
+            actual.W[:-1],
+            actual.B[:-1],
+            ideal.W[:-1],
+            ideal.B[:-1],
+            # Why [:-1]? Cuz we can't change output rows' meaning by permuting them
+        )
     ]
     return sum([p.loss for p in ps]), ps

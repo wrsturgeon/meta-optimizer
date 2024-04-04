@@ -1,13 +1,15 @@
+from metaoptimizer import permutations
 from metaoptimizer.optimizers import Optimizer
+from metaoptimizer.permutations import Permutation
 
 from beartype import beartype
-from beartype.typing import Any, Callable, Tuple
+from beartype.typing import Any, Callable, List, Tuple
 from functools import partial
 from jax import grad, jit, numpy as jnp, value_and_grad
 from jax.lax import stop_gradient
 from jax.tree_util import tree_map, tree_reduce, tree_structure
 from jax.experimental.checkify import all_checks, checkify
-from jaxtyping import jaxtyped, Array, Float, PyTree
+from jaxtyping import jaxtyped, Array, Float, PyTree, UInt
 import operator
 
 
@@ -23,7 +25,7 @@ def loss(
     forward_pass: ForwardPass,
     inputs: Float[Array, "batch ndim_in"],
     ground_truth: Float[Array, "batch ndim_out"],
-    power: Float[Array, ""] = jnp.ones([]),
+    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
 ) -> Float[Array, ""]:
     outputs = forward_pass(weights, inputs)
     assert isinstance(outputs, jnp.ndarray), f"`{outputs}` is not a JAX array"
@@ -49,7 +51,7 @@ def step(
     optim_parameterized: Optimizer,
     opt_params: PyTree[Float[Array, ""]],
     opt_state: PyTree[Float[Array, "..."]],
-    power: Float[Array, ""] = jnp.ones([]),
+    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
 ) -> Tuple[
     PyTree[Float[Array, "..."]],
     PyTree[Float[Array, "..."]],
@@ -72,7 +74,7 @@ def update_and_retest(
     opt_params: PyTree[Float[Array, ""]],
     opt_state: PyTree[Float[Array, "..."]],
     last_dLdw: PyTree[Float[Array, "..."]],
-    power: Float[Array, ""] = jnp.ones([]),
+    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
 ) -> Tuple[
     Float[Array, ""], Tuple[PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]]
 ]:
@@ -108,7 +110,7 @@ def slope_away_from_local_minimum(
 @partial(jit, static_argnums=[1, 4])
 @partial(checkify, errors=all_checks)
 @jaxtyped(typechecker=beartype)
-def step_combined(
+def step_downhill(
     weights: PyTree[Float[Array, "..."]],
     forward_pass: ForwardPass,
     inputs: Float[Array, "batch ndim_in"],
@@ -116,14 +118,12 @@ def step_combined(
     optim_parameterized: Optimizer,
     opt_params: PyTree[Float[Array, ""]],
     opt_state: PyTree[Float[Array, "..."]],
-    meta_opt_state: PyTree[Float[Array, "..."]],
     last_dLdw: PyTree[Float[Array, "..."]],
-    power: Float[Array, ""] = jnp.ones([]),
+    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
 ) -> Tuple[
     PyTree[Float[Array, "..."]],
     PyTree[Float[Array, "..."]],
     PyTree[Float[Array, ""]],
-    PyTree[Float[Array, "..."]],
     Float[Array, ""],
     PyTree[Float[Array, "..."]],
 ]:
@@ -150,19 +150,78 @@ def step_combined(
         weights,
         dLdw,
     )
-
-    # TODO: REINSTATE
-    # meta_opt_state_adjusted, opt_params_adjusted = optim_parameterized(
-    #     opt_params, meta_opt_state, opt_params, dLdo
-    # )
     opt_params_adjusted = tree_map(lambda w, d: w - 0.01 * d, opt_params, dLdo)
-    meta_opt_state_adjusted = meta_opt_state
-
     return (
         weights_adjusted,
         opt_state_adjusted,
         opt_params_adjusted,
-        meta_opt_state_adjusted,
         L,
         dLdw,
+    )
+
+
+@jaxtyped(typechecker=beartype)
+def opt_step_global(
+    opt_params: PyTree[Float[Array, ""]],
+    opt_state: PyTree[Float[Array, "..."]],
+    optim_parameterized: Optimizer,
+    weights: PyTree[Float[Array, "..."]],
+    dLdw: PyTree[Float[Array, "..."]],
+    global_minimum: PyTree[Float[Array, "..."]],
+) -> Tuple[
+    Float[Array, ""],
+    Tuple[
+        PyTree[Float[Array, "..."]],
+        PyTree[Float[Array, "..."]],
+        List[Permutation],
+    ],
+]:
+    opt_state_adjusted, weights_adjusted = optim_parameterized(
+        opt_params, opt_state, weights, dLdw
+    )
+    L, perm = permutations.layer_distance(
+        actual=weights_adjusted,
+        ideal=global_minimum,
+    )
+    return L, (opt_state_adjusted, weights_adjusted, perm)
+
+
+@partial(jit, static_argnums=[1, 4])
+@partial(checkify, errors=all_checks)
+@jaxtyped(typechecker=beartype)
+def step_global(
+    weights: PyTree[Float[Array, "..."]],
+    forward_pass: ForwardPass,
+    inputs: Float[Array, "batch ndim_in"],
+    ground_truth: Float[Array, "batch ndim_out"],
+    optim_parameterized: Optimizer,
+    opt_params: PyTree[Float[Array, ""]],
+    opt_state: PyTree[Float[Array, "..."]],
+    global_minimum: PyTree[Float[Array, "..."]],
+    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
+) -> Tuple[
+    PyTree[Float[Array, "..."]],
+    PyTree[Float[Array, "..."]],
+    PyTree[Float[Array, ""]],
+    List[Permutation],
+    Float[Array, ""],
+]:
+    L, dLdw = loss_and_grad(weights, forward_pass, inputs, ground_truth, power)
+    dLdo, (opt_state_adjusted, weights_adjusted, perm) = grad(
+        opt_step_global, has_aux=True
+    )(
+        opt_params,
+        opt_state,
+        optim_parameterized,
+        weights,
+        dLdw,
+        global_minimum,
+    )
+    opt_params_adjusted = tree_map(lambda w, d: w - 0.01 * d, opt_params, dLdo)
+    return (
+        weights_adjusted,
+        opt_state_adjusted,
+        opt_params_adjusted,
+        perm,
+        L,
     )

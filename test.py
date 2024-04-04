@@ -17,7 +17,7 @@ from jax import jit, grad, nn as jnn, numpy as jnp, random as jrnd
 from jax.experimental.checkify import all_checks, checkify
 from jax.numpy import linalg as jla
 from jax.tree_util import tree_map, tree_reduce, tree_structure
-from jaxtyping import jaxtyped, Array, Float, PyTree, TypeCheckError, UInt
+from jaxtyping import jaxtyped, Array, Bool, Float, PyTree, TypeCheckError, UInt
 from math import prod
 from numpy.typing import ArrayLike
 import operator
@@ -322,11 +322,6 @@ def test_permutation_conjecture_disproven():
         prop_permutation_conjecture(r1, r2)
 
 
-# TODO: Write a 2^n-time ( :( ) checker for the above,
-# keeping track of a running best-so-far and its score,
-# then see how long it actually takes.
-
-
 @jaxtyped(typechecker=beartype)
 def test_permute_1():
     x = jnp.array(
@@ -386,7 +381,7 @@ def test_permute_2():
 @jaxtyped(typechecker=beartype)
 def test_permute_size_check():
     x = jnp.eye(5, 5, dtype=jnp.float32)
-    i = jnp.array(range(6), dtype=jnp.uint32)
+    i = jnp.arange(6, dtype=jnp.uint32)
     with pytest.raises(AssertionError):
         permutations.permute(x, i, axis=0)
 
@@ -394,7 +389,7 @@ def test_permute_size_check():
 @jaxtyped(typechecker=beartype)
 def test_permute_axis_check():
     x = jnp.eye(5, 5, dtype=jnp.float32)
-    i = jnp.array(range(5), dtype=jnp.uint32)
+    i = jnp.arange(5, dtype=jnp.uint32)
     with pytest.raises(IndexError):
         permutations.permute(x, i, axis=5)
 
@@ -414,14 +409,98 @@ def test_find_permutation_1():
         dtype=jnp.float32,
     )
     Bactual = jnp.array([-1, 1, -1, 1, 1], dtype=jnp.float32)
-    p = permutations.find_permutation(
-        Wactual, Bactual, Wideal, Bideal, jnp.array(range(5), dtype=jnp.uint32)
-    )
-    assert jnp.all(p.indices == jnp.array([2, 0, 3, 1, 4], dtype=jnp.uint32))
-    assert jnp.all(
-        p.flip == jnp.array([True, False, True, False, False], dtype=jnp.bool)
-    )
+    p = permutations.find_permutation_weights(Wactual, Bactual, Wideal, Bideal)
+    ideal_indices = jnp.array([2, 0, 3, 1, 4], dtype=jnp.uint32)
+    ideal_flip = jnp.array([True, False, True, False, False], dtype=jnp.bool)
+    assert jnp.all(p.indices == ideal_indices), f"{p.indices} =/= {ideal_indices}"
+    assert jnp.all(p.flip == ideal_flip), f"{p.flip} =/= {ideal_flip}"
     assert jnp.allclose(p.loss, 0)
+
+
+@jaxtyped(typechecker=beartype)
+def prop_better_than_random_permutation(
+    x: Float[Array, "n ..."],
+    y: Float[Array, "n ..."],
+    randomly_chosen_indices: UInt[Array, "n"],
+    randomly_chosen_flip: Bool[Array, "n"],
+):
+    # TODO: incorporate flipping
+    allegedly_ideal = permutations.find_permutation(x, y)
+    ap = permutations.permute(x, allegedly_ideal.indices, axis=0)
+    rp = permutations.permute(x, randomly_chosen_indices, axis=0)
+    af = jnp.where(allegedly_ideal.flip, -ap, ap)
+    rf = jnp.where(randomly_chosen_flip, -rp, rp)
+    aL = jnp.sum(jnp.abs(y - af))
+    rL = jnp.sum(jnp.abs(y - rf))
+    assert aL <= rL
+
+
+@given(
+    hnp.arrays(dtype=jnp.float32, shape=(2, 2)),
+    hnp.arrays(dtype=jnp.float32, shape=(2, 2)),
+    st.permutations(range(2)),
+    hnp.arrays(dtype=jnp.bool, shape=(2,)),
+)
+def test_better_than_random_permutation_prop_2(x, y, randomly_chosen, flip):
+    if not (jnp.all(jnp.isfinite(x)) and jnp.all(jnp.isfinite(x))):
+        return
+    prop_better_than_random_permutation(
+        jnp.array(x),
+        jnp.array(y),
+        jnp.array(randomly_chosen, dtype=jnp.uint32),
+        jnp.array(flip, dtype=jnp.bool),
+    )
+
+
+@given(
+    hnp.arrays(dtype=jnp.float32, shape=(3, 3)),
+    hnp.arrays(dtype=jnp.float32, shape=(3, 3)),
+    st.permutations(range(3)),
+    hnp.arrays(dtype=jnp.bool, shape=(3,)),
+)
+def test_better_than_random_permutation_prop_3(x, y, randomly_chosen, flip):
+    if not (jnp.all(jnp.isfinite(x)) and jnp.all(jnp.isfinite(x))):
+        return
+    prop_better_than_random_permutation(
+        jnp.array(x),
+        jnp.array(y),
+        jnp.array(randomly_chosen, dtype=jnp.uint32),
+        jnp.array(flip, dtype=jnp.bool),
+    )
+
+
+@given(
+    hnp.arrays(dtype=jnp.float32, shape=(4, 4)),
+    hnp.arrays(dtype=jnp.float32, shape=(4, 4)),
+    st.permutations(range(4)),
+    hnp.arrays(dtype=jnp.bool, shape=(4,)),
+)
+def test_better_than_random_permutation_prop_4(x, y, randomly_chosen, flip):
+    if not (jnp.all(jnp.isfinite(x)) and jnp.all(jnp.isfinite(x))):
+        return
+    prop_better_than_random_permutation(
+        jnp.array(x),
+        jnp.array(y),
+        jnp.array(randomly_chosen, dtype=jnp.uint32),
+        jnp.array(flip, dtype=jnp.bool),
+    )
+
+
+@given(
+    hnp.arrays(dtype=jnp.float32, shape=(5, 5)),
+    hnp.arrays(dtype=jnp.float32, shape=(5, 5)),
+    st.permutations(range(5)),
+    hnp.arrays(dtype=jnp.bool, shape=(5,)),
+)
+def test_better_than_random_permutation_prop_5(x, y, randomly_chosen, flip):
+    if not (jnp.all(jnp.isfinite(x)) and jnp.all(jnp.isfinite(x))):
+        return
+    prop_better_than_random_permutation(
+        jnp.array(x),
+        jnp.array(y),
+        jnp.array(randomly_chosen, dtype=jnp.uint32),
+        jnp.array(flip, dtype=jnp.bool),
+    )
 
 
 @jaxtyped(typechecker=beartype)
@@ -452,7 +531,7 @@ def test_permute_hidden_layers_1():
         Weights(
             [jnp.zeros([5, 5]) for _ in range(3)], [jnp.zeros([5]) for _ in range(3)]
         ),
-        [jnp.array(range(5), dtype=jnp.uint32), jnp.array(range(5), dtype=jnp.uint32)],
+        [jnp.arange(5, dtype=jnp.uint32), jnp.arange(5, dtype=jnp.uint32)],
         jnp.zeros([1, 5]),
     )
 
@@ -464,7 +543,7 @@ def test_permute_hidden_layers_2():
             list(jnp.full([3, 5, 5], 3.2994486e17)),
             list(jnp.full([3, 5], 5.442048e17)),
         ),
-        p=[jnp.array(range(5), dtype=jnp.uint32) for _ in range(2)],
+        p=[jnp.arange(5, dtype=jnp.uint32) for _ in range(2)],
         x=jnp.full([1, 5], 1.3602583e17),
     )
 
@@ -502,11 +581,9 @@ def test_layer_distance():
     Bactual = [jnp.zeros(5) for _ in range(3)]
     Wideal = [eye, eye, eye]
     Bideal = [jnp.zeros(5) for _ in range(3)]
-    last_best = [jnp.array(range(5), dtype=jnp.uint32) for _ in range(2)]
     loss, ps = permutations.layer_distance(
         Weights(Wactual, Bactual),
         Weights(Wideal, Bideal),
-        last_best,
     )
     assert len(ps) == 2
     assert jnp.isclose(loss, 0)
@@ -516,8 +593,10 @@ def test_layer_distance():
     assert jnp.all(jnp.logical_not(ps[1].flip))
 
 
-NDIM = 5
+NDIM = 3
+BATCH = 32
 LAYERS = 3
+EPOCHS = 2  # that's right: *two* training steps
 
 
 @jaxtyped(typechecker=beartype)
@@ -528,13 +607,13 @@ def prop_optim(
         [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
         PyTree[Float[Array, "..."]],
     ],
-    power: Float[Array, ""] = jnp.ones([]),
+    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
 ):
     w = feedforward.feedforward_init(
         [NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42)
     )
     key = jrnd.PRNGKey(42)
-    orig_x = jrnd.normal(key, [1, NDIM])
+    orig_x = jrnd.normal(key, [BATCH, NDIM])
     forward_pass: ForwardPass = partial(feedforward.feedforward, nl=jnn.gelu)
     eval_weights = jit(
         lambda weights: checkify(training.loss, errors=all_checks)(
@@ -544,9 +623,9 @@ def prop_optim(
     err, orig_loss = eval_weights(w)
     err.throw()
     opt_state = opt_state_init(w, opt_params)
-    for _ in range(100):
+    for _ in range(EPOCHS):
         k, key = jrnd.split(key)
-        x = jrnd.normal(k, [1, NDIM])
+        x = jrnd.normal(k, [BATCH, NDIM])
         err, (w, opt_state, _) = training.step(
             w, forward_pass, x, jnp.sin(10 * x), optim, opt_params, opt_state, power
         )
@@ -600,22 +679,22 @@ def test_optim_adam():
 
 
 @jaxtyped(typechecker=beartype)
-def prop_optim_combined(
+def prop_optim_downhill(
     optim: Optimizer,
     opt_params: PyTree[Float[Array, ""]],
     opt_state_init: Callable[
         [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
         PyTree[Float[Array, "..."]],
     ],
-    power: Float[Array, ""] = jnp.ones([]),
+    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
 ):
-    print(f"Initl optimizer parameters: {opt_params}")
+    # print(f"Initl optimizer parameters: {opt_params}")
     orig_opt_params = opt_params
     w = feedforward.feedforward_init(
         [NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42)
     )
     key = jrnd.PRNGKey(42)
-    orig_x = jrnd.normal(key, [1, NDIM])
+    orig_x = jrnd.normal(key, [BATCH, NDIM])
     forward_pass: ForwardPass = partial(feedforward.feedforward, nl=jnn.gelu)
     eval_weights = jit(
         lambda weights: checkify(training.loss_and_grad, errors=all_checks)(
@@ -625,11 +704,10 @@ def prop_optim_combined(
     err, (orig_loss, last_dLdw) = eval_weights(w)
     err.throw()
     opt_state = opt_state_init(w, opt_params)
-    meta_opt_state = opt_state_init(opt_params, opt_params)
-    for _ in range(100):
+    for _ in range(EPOCHS):
         k, key = jrnd.split(key)
-        x = jrnd.normal(k, [1, NDIM])
-        err, aux = training.step_combined(
+        x = jrnd.normal(k, [BATCH, NDIM])
+        err, aux = training.step_downhill(
             w,
             forward_pass,
             x,
@@ -637,14 +715,13 @@ def prop_optim_combined(
             optim,
             opt_params,
             opt_state,
-            meta_opt_state,
             last_dLdw,
             power,
         )
         err.throw()
-        w, opt_state, opt_params, meta_opt_state, _, last_dLdw = aux
-        print(f"Intrm optimizer parameters: {opt_params}")
-    print(f"Final optimizer parameters: {opt_params}")
+        w, opt_state, opt_params, _, last_dLdw = aux
+        # print(f"Intrm optimizer parameters: {opt_params}")
+    # print(f"Final optimizer parameters: {opt_params}")
     err, (post_loss, _) = eval_weights(w)
     err.throw()
     # make sure we learned *something*:
@@ -655,42 +732,143 @@ def prop_optim_combined(
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_combined_sgd():
+def test_optim_downhill_sgd():
     import metaoptimizer.optimizers.sgd as optim
 
-    prop_optim_combined(optim.update, optim.defaults(), optim.init)
+    prop_optim_downhill(optim.update, optim.defaults(), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_combined_weight_decay():
+def test_optim_downhill_weight_decay():
     import metaoptimizer.optimizers.weight_decay as optim
 
-    prop_optim_combined(optim.update, optim.defaults(), optim.init)
+    prop_optim_downhill(optim.update, optim.defaults(), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_combined_momentum():
+def test_optim_downhill_momentum():
     import metaoptimizer.optimizers.momentum as optim
 
-    prop_optim_combined(optim.update, optim.defaults(), optim.init)
+    prop_optim_downhill(optim.update, optim.defaults(), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_combined_nesterov():
+def test_optim_downhill_nesterov():
     import metaoptimizer.optimizers.nesterov as optim
 
-    prop_optim_combined(optim.update, optim.defaults(), optim.init)
+    prop_optim_downhill(optim.update, optim.defaults(), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_combined_rmsprop():
+def test_optim_downhill_rmsprop():
     import metaoptimizer.optimizers.rmsprop as optim
 
-    prop_optim_combined(optim.update, optim.defaults(), optim.init)
+    prop_optim_downhill(optim.update, optim.defaults(), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_combined_adam():
+def test_optim_downhill_adam():
     import metaoptimizer.optimizers.adam as optim
 
-    prop_optim_combined(optim.update, optim.defaults(), optim.init)
+    prop_optim_downhill(optim.update, optim.defaults(), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def prop_optim_global(
+    optim: Optimizer,
+    opt_params: PyTree[Float[Array, ""]],
+    opt_state_init: Callable[
+        [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
+        PyTree[Float[Array, "..."]],
+    ],
+    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
+):
+    # print(f"Initl optimizer parameters: {opt_params}")
+    orig_opt_params = opt_params
+    [w, w_ideal] = [
+        feedforward.feedforward_init(
+            [NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42 + i)
+        )
+        for i in range(2)
+    ]
+    key = jrnd.PRNGKey(42)
+    orig_x = jrnd.normal(key, [BATCH, NDIM])
+    forward_pass: ForwardPass = partial(feedforward.feedforward, nl=jnn.gelu)
+    orig_y = forward_pass(w_ideal, orig_x)
+    eval_weights = jit(
+        lambda weights: checkify(training.loss, errors=all_checks)(
+            weights, forward_pass, orig_x, orig_y, power
+        )
+    )
+    err, orig_loss = eval_weights(w)
+    err.throw()
+    orig_layer_distance, _ = permutations.layer_distance(w, w_ideal)
+    opt_state = opt_state_init(w, opt_params)
+    for _ in range(100 * EPOCHS):
+        k, key = jrnd.split(key)
+        x = jrnd.normal(k, [BATCH, NDIM])
+        err, (w, opt_state, opt_params, _, _) = training.step_global(
+            w,
+            forward_pass,
+            x,
+            forward_pass(w_ideal, x),
+            optim,
+            opt_params,
+            opt_state,
+            global_minimum=w_ideal,
+            power=power,
+        )
+        err.throw()
+        # print(f"Intrm optimizer parameters: {opt_params}")
+    # print(f"Final optimizer parameters: {opt_params}")
+    err, post_loss = eval_weights(w)
+    err.throw()
+    post_layer_distance, _ = permutations.layer_distance(w, w_ideal)
+    # make sure we learned *something*:
+    assert post_loss < orig_loss
+    assert post_layer_distance < orig_layer_distance
+    assert not tree_reduce(
+        operator.and_, tree_map(jnp.allclose, opt_params, orig_opt_params)
+    )
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_global_sgd():
+    import metaoptimizer.optimizers.sgd as optim
+
+    prop_optim_global(optim.update, optim.defaults(), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_global_weight_decay():
+    import metaoptimizer.optimizers.weight_decay as optim
+
+    prop_optim_global(optim.update, optim.defaults(), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_global_momentum():
+    import metaoptimizer.optimizers.momentum as optim
+
+    prop_optim_global(optim.update, optim.defaults(), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_global_nesterov():
+    import metaoptimizer.optimizers.nesterov as optim
+
+    prop_optim_global(optim.update, optim.defaults(), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_global_rmsprop():
+    import metaoptimizer.optimizers.rmsprop as optim
+
+    prop_optim_global(optim.update, optim.defaults(), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_global_adam():
+    import metaoptimizer.optimizers.adam as optim
+
+    prop_optim_global(optim.update, optim.defaults(), optim.init)
