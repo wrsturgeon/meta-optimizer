@@ -2,7 +2,6 @@ from metaoptimizer.weights import Weights
 
 from beartype import beartype
 from beartype.typing import List, Tuple
-from functools import partial
 from jax import nn as jnn, numpy as jnp, pmap
 from jax.experimental.checkify import check
 from jax.lax import cond

@@ -16,8 +16,8 @@ class State(NamedTuple):
 
 
 @jaxtyped(typechecker=beartype)
-def defaults() -> Params:
-    return Params(log_lr=jnp.log(0.01))
+def defaults(lr: Float[Array, ""] = jnp.array(0.01)) -> Params:
+    return Params(log_lr=jnp.log(lr))
 
 
 @jaxtyped(typechecker=beartype)

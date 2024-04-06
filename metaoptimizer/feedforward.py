@@ -2,7 +2,6 @@ from metaoptimizer.weights import Weights
 
 from beartype import beartype
 from beartype.typing import Callable
-from functools import partial
 from jax import nn as jnn, numpy as jnp, random as jrnd
 from jax.experimental.checkify import check
 from jax.numpy import linalg as jla
@@ -12,10 +11,10 @@ KeyArray = UInt[Array, "n_keys"]  # <https://github.com/google/jax/issues/12706>
 
 
 @jaxtyped(typechecker=beartype)
-def feedforward(
+def run(
     w: Weights,
     x: Float[Array, "batch n_in"],
-    nl: Callable[[Float[Array, "..."]], Float[Array, "..."]],  # = jnn.gelu,
+    nl: Callable[[Float[Array, "..."]], Float[Array, "..."]] = jnn.gelu,
 ) -> Float[Array, "batch n_out"]:
     batch, ndim_in = x.shape
     x = x[..., jnp.newaxis]
@@ -55,7 +54,7 @@ def feedforward(
 
 
 @jaxtyped(typechecker=beartype)
-def feedforward_init(
+def init(
     sizes: list[int],
     key: KeyArray,
 ) -> Weights:

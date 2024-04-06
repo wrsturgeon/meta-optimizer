@@ -20,10 +20,11 @@ class State(NamedTuple):
 
 
 @jaxtyped(typechecker=beartype)
-def defaults() -> Params:
-    return Params(
-        log_lr=jnp.log(0.01), inv_sig_momentum=inverse_sigmoid(jnp.array(0.9))
-    )
+def defaults(
+    lr: Float[Array, ""] = jnp.array(0.01),
+    momentum: Float[Array, ""] = jnp.array(0.9),
+) -> Params:
+    return Params(log_lr=jnp.log(lr), inv_sig_momentum=inverse_sigmoid(momentum))
 
 
 @jaxtyped(typechecker=beartype)
@@ -40,6 +41,6 @@ def update(
 ) -> Tuple[State, PyTree[Float[Array, "..."]]]:
     lr = jnp.exp(p.log_lr)
     momentum = jnn.sigmoid(p.inv_sig_momentum)
-    last = tree_map(lambda di, lu: lr * di - momentum * lu, dLdw, s.last_update)
-    updated = tree_map(operator.sub, w, last)
-    return State(last_update=last), updated
+    update = tree_map(lambda di, lu: lr * di + momentum * lu, dLdw, s.last_update)
+    updated = tree_map(operator.sub, w, update)
+    return State(last_update=update), updated

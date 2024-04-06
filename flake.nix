@@ -58,19 +58,19 @@
             set -eux
             ${python} -m black --check .
             ${python} -m mypy .
-            ${python} -m coverage run --omit "/nix/*" -m pytest -Werror test.py
+            ${python} -m coverage run --omit='/nix/*' -m pytest -Werror test.py
             ${python} -m coverage report -m
-            export COVPCT=$(${python} -m coverage report -m | tail -n 1 | tr -s " " | cut -d " " -f 4)
-            if [ "''${COVPCT}" != "100%" ]; then
+            export COVPCT=$(${python} -m coverage report -m | tail -n 1 | tr -s ' ' | cut -d ' ' -f 4)
+            if [ "''${COVPCT}" != '100%' ]; then
               echo "Coverage reported ''${COVPCT} overall, but we expected 100%"
               exit 1
             fi
           '';
-        buildAndRun = double-quotes: exec: ''
+        buildAndRun = exec: ''
           mkdir -p $out/bin
           mv ./* $out/
           echo '#!${pkgs.bash}/bin/bash' > $out/bin/${pname}
-          echo ${if double-quotes then "\"${exec}\"" else "'${exec}'"} >> $out/bin/${pname}
+          echo "${exec}" >> $out/bin/${pname}
           chmod +x $out/bin/${pname}
         '';
       in
@@ -82,26 +82,27 @@
           }) self.packages.${system};
           default = pkgs.stdenv.mkDerivation {
             inherit pname src version;
-            buildPhase = buildAndRun true ''
-              cd $out
+            buildPhase = buildAndRun ''
               ${python-with [ default-pkgs ]} $out/main.py
             '';
-            checkPhase =
-              let
-                python = python-with [
-                  default-pkgs
-                  check-pkgs
-                ];
-              in
-              ''
-                cd $out
-                ${python} -m pytest -Werror test.py
-              '';
-            doCheck = true;
+            # checkPhase =
+            #   let
+            #     python = python-with [
+            #       default-pkgs
+            #       check-pkgs
+            #     ];
+            #   in
+            #   ''
+            #     cd $out
+            #     ${python} -m pytest -Werror test.py
+            #   '';
+            # doCheck = true;
+            checkPhase = ":";
+            doCheck = false;
           };
           ci = pkgs.stdenv.mkDerivation {
             inherit pname src version;
-            buildPhase = buildAndRun false ci-script;
+            buildPhase = buildAndRun ci-script;
             checkPhase = ":";
             doCheck = false;
           };

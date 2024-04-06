@@ -19,9 +19,13 @@ class State(NamedTuple):
 
 
 @jaxtyped(typechecker=beartype)
-def defaults() -> Params:
+def defaults(
+    lr: Float[Array, ""] = jnp.array(0.01),
+    weight_decay: Float[Array, ""] = jnp.array(0.999),
+) -> Params:
     return Params(
-        log_lr=jnp.log(0.01), inv_sig_weight_decay=inverse_sigmoid(jnp.array(0.999))
+        log_lr=jnp.log(lr),
+        inv_sig_weight_decay=inverse_sigmoid(weight_decay),
     )
 
 

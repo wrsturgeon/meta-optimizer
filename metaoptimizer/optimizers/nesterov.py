@@ -21,11 +21,15 @@ class State(NamedTuple):
 
 
 @jaxtyped(typechecker=beartype)
-def defaults() -> Params:
+def defaults(
+    lr: Float[Array, ""] = jnp.array(0.01),
+    momentum: Float[Array, ""] = jnp.array(0.9),
+    overstep: Float[Array, ""] = jnp.array(0.9),
+) -> Params:
     return Params(
-        log_lr=jnp.log(0.01),
-        inv_sig_momentum=inverse_sigmoid(jnp.array(0.9)),
-        log_overstep=jnp.log(0.9),
+        log_lr=jnp.log(lr),
+        inv_sig_momentum=inverse_sigmoid(momentum),
+        log_overstep=jnp.log(overstep),
     )
 
 
@@ -47,9 +51,9 @@ def update(
     lr = jnp.exp(p.log_lr)
     momentum = jnn.sigmoid(p.inv_sig_momentum)
     overstep = jnp.exp(p.log_overstep)
-    last = tree_map(lambda di, lu: lr * di - momentum * lu, dLdw, s.last_update)
-    updated = tree_map(lambda wi, lu: wi - lu, w, last)
+    update = tree_map(lambda di, lu: lr * di + momentum * lu, dLdw, s.last_update)
+    updated = tree_map(lambda wi, ui: wi - ui, w, update)
     return (
-        State(last_update=last, actual=updated),
-        tree_map(lambda wi, lu: wi - overstep * lu, updated, last),
+        State(last_update=update, actual=updated),
+        tree_map(lambda wi, ui: wi - overstep * ui, updated, update),
     )

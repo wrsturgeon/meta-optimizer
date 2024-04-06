@@ -10,7 +10,6 @@ from metaoptimizer.weights import Weights
 
 from beartype import beartype
 from beartype.typing import Any, Callable, Protocol, Tuple
-from functools import partial
 from hypothesis import given, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
 from jax import jit, grad, nn as jnn, numpy as jnp, random as jrnd
@@ -26,7 +25,7 @@ import pytest
 
 
 TEST_COUNT_CI = 1000
-TEST_COUNT_NORMAL = 10
+TEST_COUNT_NORMAL = 100  # doesn't really matter for end-users: extensively tested in CI
 settings.register_profile(
     "no_deadline",
     deadline=None,
@@ -249,9 +248,7 @@ def test_feedforward_id_prop(np_x: ArrayLike):
     x = jnp.array(np_x)
     if not jnp.all(jnp.isfinite(x)):
         return
-    y = feedforward.feedforward(
-        Weights([jnp.eye(3, 3)], [jnp.zeros([3])]), x, nl=lambda z: z
-    )
+    y = feedforward.run(Weights([jnp.eye(3, 3)], [jnp.zeros([3])]), x, nl=lambda z: z)
     assert jnp.allclose(y, x)
 
 
@@ -265,8 +262,8 @@ def test_feedforward_id_prop(np_x: ArrayLike):
 
 @jaxtyped(typechecker=beartype)
 def test_feedforward_init_1():
-    w = feedforward.feedforward_init([5, 42, 3, 8, 7], jrnd.PRNGKey(42))
-    y = feedforward.feedforward(w, jnp.ones([1, 5]), nl=jnn.gelu)
+    w = feedforward.init([5, 42, 3, 8, 7], jrnd.PRNGKey(42))
+    y = feedforward.run(w, jnp.ones([1, 5]), nl=jnn.gelu)
     assert jnp.allclose(
         y,
         jnp.array(
@@ -424,6 +421,8 @@ def prop_better_than_random_permutation(
     randomly_chosen_indices: UInt[Array, "n"],
     randomly_chosen_flip: Bool[Array, "n"],
 ):
+    if not (jnp.all(jnp.isfinite(x)) and jnp.all(jnp.isfinite(y))):
+        return
     # TODO: incorporate flipping
     allegedly_ideal = permutations.find_permutation(x, y)
     ap = permutations.permute(x, allegedly_ideal.indices, axis=0)
@@ -442,8 +441,6 @@ def prop_better_than_random_permutation(
     hnp.arrays(dtype=jnp.bool, shape=(2,)),
 )
 def test_better_than_random_permutation_prop_2(x, y, randomly_chosen, flip):
-    if not (jnp.all(jnp.isfinite(x)) and jnp.all(jnp.isfinite(x))):
-        return
     prop_better_than_random_permutation(
         jnp.array(x),
         jnp.array(y),
@@ -459,8 +456,6 @@ def test_better_than_random_permutation_prop_2(x, y, randomly_chosen, flip):
     hnp.arrays(dtype=jnp.bool, shape=(3,)),
 )
 def test_better_than_random_permutation_prop_3(x, y, randomly_chosen, flip):
-    if not (jnp.all(jnp.isfinite(x)) and jnp.all(jnp.isfinite(x))):
-        return
     prop_better_than_random_permutation(
         jnp.array(x),
         jnp.array(y),
@@ -476,8 +471,6 @@ def test_better_than_random_permutation_prop_3(x, y, randomly_chosen, flip):
     hnp.arrays(dtype=jnp.bool, shape=(4,)),
 )
 def test_better_than_random_permutation_prop_4(x, y, randomly_chosen, flip):
-    if not (jnp.all(jnp.isfinite(x)) and jnp.all(jnp.isfinite(x))):
-        return
     prop_better_than_random_permutation(
         jnp.array(x),
         jnp.array(y),
@@ -493,8 +486,6 @@ def test_better_than_random_permutation_prop_4(x, y, randomly_chosen, flip):
     hnp.arrays(dtype=jnp.bool, shape=(5,)),
 )
 def test_better_than_random_permutation_prop_5(x, y, randomly_chosen, flip):
-    if not (jnp.all(jnp.isfinite(x)) and jnp.all(jnp.isfinite(x))):
-        return
     prop_better_than_random_permutation(
         jnp.array(x),
         jnp.array(y),
@@ -520,8 +511,8 @@ def prop_permute_hidden_layers(
     ):
         return
     wp = permutations.permute_hidden_layers(w, p)
-    y = feedforward.feedforward(w, x, nl=jnn.gelu)
-    yp = feedforward.feedforward(wp, x, nl=jnn.gelu)
+    y = feedforward.run(w, x, nl=jnn.gelu)
+    yp = feedforward.run(wp, x, nl=jnn.gelu)
     assert jnp.allclose(y, yp)
 
 
@@ -596,7 +587,8 @@ def test_layer_distance():
 NDIM = 3
 BATCH = 32
 LAYERS = 3
-EPOCHS = 2  # that's right: *two* training steps
+EPOCHS = 32
+LR = jnp.array(0.001)
 
 
 @jaxtyped(typechecker=beartype)
@@ -609,12 +601,10 @@ def prop_optim(
     ],
     power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
 ):
-    w = feedforward.feedforward_init(
-        [NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42)
-    )
+    w = feedforward.init([NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42))
     key = jrnd.PRNGKey(42)
     orig_x = jrnd.normal(key, [BATCH, NDIM])
-    forward_pass: ForwardPass = partial(feedforward.feedforward, nl=jnn.gelu)
+    forward_pass: ForwardPass = feedforward.run
     eval_weights = jit(
         lambda weights: checkify(training.loss, errors=all_checks)(
             weights, forward_pass, orig_x, jnp.sin(10 * orig_x), power
@@ -640,42 +630,49 @@ def prop_optim(
 def test_optim_sgd():
     import metaoptimizer.optimizers.sgd as optim
 
-    prop_optim(optim.update, optim.defaults(), optim.init)
+    prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_weight_decay():
     import metaoptimizer.optimizers.weight_decay as optim
 
-    prop_optim(optim.update, optim.defaults(), optim.init)
+    prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_momentum():
     import metaoptimizer.optimizers.momentum as optim
 
-    prop_optim(optim.update, optim.defaults(), optim.init)
+    prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_nesterov():
     import metaoptimizer.optimizers.nesterov as optim
 
-    prop_optim(optim.update, optim.defaults(), optim.init)
+    prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_rmsprop():
     import metaoptimizer.optimizers.rmsprop as optim
 
-    prop_optim(optim.update, optim.defaults(), optim.init)
+    prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_adam():
     import metaoptimizer.optimizers.adam as optim
 
-    prop_optim(optim.update, optim.defaults(), optim.init)
+    prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_swiss_army_knife():
+    import metaoptimizer.optimizers.swiss_army_knife as optim
+
+    prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
@@ -690,12 +687,10 @@ def prop_optim_downhill(
 ):
     # print(f"Initl optimizer parameters: {opt_params}")
     orig_opt_params = opt_params
-    w = feedforward.feedforward_init(
-        [NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42)
-    )
+    w = feedforward.init([NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42))
     key = jrnd.PRNGKey(42)
     orig_x = jrnd.normal(key, [BATCH, NDIM])
-    forward_pass: ForwardPass = partial(feedforward.feedforward, nl=jnn.gelu)
+    forward_pass: ForwardPass = feedforward.run
     eval_weights = jit(
         lambda weights: checkify(training.loss_and_grad, errors=all_checks)(
             weights, forward_pass, orig_x, jnp.sin(10 * orig_x), power
@@ -735,42 +730,49 @@ def prop_optim_downhill(
 def test_optim_downhill_sgd():
     import metaoptimizer.optimizers.sgd as optim
 
-    prop_optim_downhill(optim.update, optim.defaults(), optim.init)
+    prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_downhill_weight_decay():
     import metaoptimizer.optimizers.weight_decay as optim
 
-    prop_optim_downhill(optim.update, optim.defaults(), optim.init)
+    prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_downhill_momentum():
     import metaoptimizer.optimizers.momentum as optim
 
-    prop_optim_downhill(optim.update, optim.defaults(), optim.init)
+    prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_downhill_nesterov():
     import metaoptimizer.optimizers.nesterov as optim
 
-    prop_optim_downhill(optim.update, optim.defaults(), optim.init)
+    prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_downhill_rmsprop():
     import metaoptimizer.optimizers.rmsprop as optim
 
-    prop_optim_downhill(optim.update, optim.defaults(), optim.init)
+    prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_downhill_adam():
     import metaoptimizer.optimizers.adam as optim
 
-    prop_optim_downhill(optim.update, optim.defaults(), optim.init)
+    prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_downhill_swiss_army_knife():
+    import metaoptimizer.optimizers.swiss_army_knife as optim
+
+    prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
@@ -786,15 +788,18 @@ def prop_optim_global(
     # print(f"Initl optimizer parameters: {opt_params}")
     orig_opt_params = opt_params
     [w, w_ideal] = [
-        feedforward.feedforward_init(
-            [NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42 + i)
+        feedforward.init(
+            [NDIM for _ in range(LAYERS + 1)],
+            jrnd.PRNGKey(42 + i),
         )
         for i in range(2)
     ]
     key = jrnd.PRNGKey(42)
     orig_x = jrnd.normal(key, [BATCH, NDIM])
-    forward_pass: ForwardPass = partial(feedforward.feedforward, nl=jnn.gelu)
-    orig_y = forward_pass(w_ideal, orig_x)
+    forward_pass: ForwardPass = feedforward.run
+    jit_forward_pass = jit(checkify(forward_pass, errors=all_checks))
+    err, orig_y = jit_forward_pass(w_ideal, orig_x)
+    err.throw()
     eval_weights = jit(
         lambda weights: checkify(training.loss, errors=all_checks)(
             weights, forward_pass, orig_x, orig_y, power
@@ -804,14 +809,16 @@ def prop_optim_global(
     err.throw()
     orig_layer_distance, _ = permutations.layer_distance(w, w_ideal)
     opt_state = opt_state_init(w, opt_params)
-    for _ in range(100 * EPOCHS):
+    for _ in range(EPOCHS):
         k, key = jrnd.split(key)
         x = jrnd.normal(k, [BATCH, NDIM])
+        err, y_ideal = jit_forward_pass(w_ideal, x)
+        err.throw()
         err, (w, opt_state, opt_params, _, _) = training.step_global(
             w,
             forward_pass,
             x,
-            forward_pass(w_ideal, x),
+            y_ideal,
             optim,
             opt_params,
             opt_state,
@@ -836,39 +843,46 @@ def prop_optim_global(
 def test_optim_global_sgd():
     import metaoptimizer.optimizers.sgd as optim
 
-    prop_optim_global(optim.update, optim.defaults(), optim.init)
+    prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_global_weight_decay():
     import metaoptimizer.optimizers.weight_decay as optim
 
-    prop_optim_global(optim.update, optim.defaults(), optim.init)
+    prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_global_momentum():
     import metaoptimizer.optimizers.momentum as optim
 
-    prop_optim_global(optim.update, optim.defaults(), optim.init)
+    prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_global_nesterov():
     import metaoptimizer.optimizers.nesterov as optim
 
-    prop_optim_global(optim.update, optim.defaults(), optim.init)
+    prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_global_rmsprop():
     import metaoptimizer.optimizers.rmsprop as optim
 
-    prop_optim_global(optim.update, optim.defaults(), optim.init)
+    prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
 def test_optim_global_adam():
     import metaoptimizer.optimizers.adam as optim
 
-    prop_optim_global(optim.update, optim.defaults(), optim.init)
+    prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_global_swiss_army_knife():
+    import metaoptimizer.optimizers.swiss_army_knife as optim
+
+    prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)

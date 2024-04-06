@@ -22,11 +22,15 @@ class State(NamedTuple):
 
 
 @jaxtyped(typechecker=beartype)
-def defaults() -> Params:
+def defaults(
+    lr: Float[Array, ""] = jnp.array(0.01),
+    moving_square_decay: Float[Array, ""] = jnp.array(0.9),
+    epsilon: Float[Array, ""] = jnp.array(1e-8),
+) -> Params:
     return Params(
-        log_lr=jnp.log(0.01),
-        inv_sig_moving_square_decay=inverse_sigmoid(jnp.array(0.9)),
-        log_epsilon=jnp.log(1e-8),
+        log_lr=jnp.log(lr),
+        inv_sig_moving_square_decay=inverse_sigmoid(moving_square_decay),
+        log_epsilon=jnp.log(epsilon),
     )
 
 
@@ -49,11 +53,6 @@ def update(
     persistent_sq = tree_map(lambda w: moving_square_decay * w, s.moving_square)
     novel_sq = tree_map(lambda w: (1.0 - moving_square_decay) * w, squared)
     moving_sq = tree_map(operator.add, persistent_sq, novel_sq)
-    # check(
-    #     tree_reduce(operator.and_, tree_map(lambda x: jnp.all(x > 0), moving_sq)),
-    #     "{m} must be nonnegative everywhere",
-    #     m=moving_sq,
-    # )
     rms = tree_map(jnp.sqrt, moving_sq)
     update = tree_map(lambda di, ri: lr * di / (ri + epsilon), dLdw, rms)
     updated = tree_map(operator.sub, w, update)

@@ -1,6 +1,5 @@
 from beartype import beartype
 from beartype.typing import Tuple
-from functools import partial
 from jax import numpy as jnp, scipy as jsp
 from jax.experimental.checkify import check
 from jax.numpy import linalg as jla
