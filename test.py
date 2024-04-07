@@ -10,7 +10,7 @@ from metaoptimizer.weights import Weights
 
 from beartype import beartype
 from beartype.typing import Any, Callable, Protocol, Tuple
-from hypothesis import given, reproduce_failure, settings, strategies as st, Verbosity
+from hypothesis import given, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
 from jax import jit, grad, nn as jnn, numpy as jnp, random as jrnd
 from jax.experimental.checkify import all_checks, checkify
@@ -355,7 +355,7 @@ def prop_better_than_random_permutation(
     aL = jnp.sum(jnp.abs(af - x))
     rL = jnp.sum(jnp.abs(rf - x))
     assert jnp.isclose(allegedly_ideal.loss, aL), f"{allegedly_ideal.loss} =/= {aL}"
-    assert aL <= rL, f"{aL} </= {rL}"
+    assert jnp.isclose(aL, rL) or (aL < rL), f"{aL} </= {rL}"
 
 
 def test_better_than_random_permutation_frozen_1():
