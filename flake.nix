@@ -58,17 +58,17 @@
               ];
             in
             ''
-              set -eu
+              rm -fr result
               ${python} -m black --check .
               ${python} -m mypy .
               ${python} -m coverage run --omit='/nix/*' -m pytest -Werror test.py
               ${python} -m coverage report -m --fail-under=100
             '';
           default = ''
-            JAX_ENABLE_X64=1 ${python-with [ default-pkgs ]} $out/main.py
+            ${python-with [ default-pkgs ]} $out/main.py
           '';
           plot = ''
-            JAX_ENABLE_X64=1 ${python-with [ default-pkgs ]} $out/plot.py
+            ${python-with [ default-pkgs ]} $out/plot.py
           '';
         };
       in
@@ -86,7 +86,11 @@
                 echo = "${pkgs.coreutils}/bin/echo";
                 mkdir = "${pkgs.coreutils}/bin/mkdir";
                 mv = "${pkgs.coreutils}/bin/mv";
-                shebang = "#!${pkgs.bash}/bin/bash";
+                shebang = ''
+                  #!${pkgs.bash}/bin/bash
+                  set -eu
+                  export JAX_ENABLE_X64=1
+                '';
               in
               ''
                 ${mkdir} -p $out/bin

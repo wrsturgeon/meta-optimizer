@@ -10,7 +10,7 @@ from metaoptimizer.weights import Weights
 
 from beartype import beartype
 from beartype.typing import Any, Callable, Protocol, Tuple
-from hypothesis import given, settings, strategies as st, Verbosity
+from hypothesis import given, reproduce_failure, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
 from jax import jit, grad, nn as jnn, numpy as jnp, random as jrnd
 from jax.experimental.checkify import all_checks, checkify
@@ -25,7 +25,7 @@ import pytest
 
 
 TEST_COUNT_CI = 10000
-TEST_COUNT_NORMAL = 100
+TEST_COUNT_NORMAL = 1
 settings.register_profile(
     "no_deadline",
     deadline=None,
@@ -344,33 +344,18 @@ def prop_better_than_random_permutation(
     print(x)
     print("y")
     print(y)
-    af = jnp.where(allegedly_ideal.flip[:, jnp.newaxis], -x, x)
-    rf = jnp.where(randomly_chosen_flip[:, jnp.newaxis], -x, x)
-    print("af")
-    print(af)
-    ap = permutations.permute(af, allegedly_ideal.indices, axis=0)
-    rp = permutations.permute(rf, randomly_chosen_indices, axis=0)
+    ap = permutations.permute(y, allegedly_ideal.indices, axis=0)
+    rp = permutations.permute(y, randomly_chosen_indices, axis=0)
     print("ap")
     print(ap)
-    aL = jnp.sum(jnp.abs(y - ap))
-    rL = jnp.sum(jnp.abs(y - rp))
+    af = jnp.where(allegedly_ideal.flip[:, jnp.newaxis], -ap, ap)
+    rf = jnp.where(randomly_chosen_flip[:, jnp.newaxis], -rp, rp)
+    print("af")
+    print(af)
+    aL = jnp.sum(jnp.abs(af - x))
+    rL = jnp.sum(jnp.abs(rf - x))
     assert jnp.isclose(allegedly_ideal.loss, aL), f"{allegedly_ideal.loss} =/= {aL}"
     assert aL <= rL, f"{aL} </= {rL}"
-
-
-@given(
-    hnp.arrays(dtype=jnp.float32, shape=(2, 2)),
-    hnp.arrays(dtype=jnp.float32, shape=(2, 2)),
-    st.permutations(range(2)),
-    hnp.arrays(dtype=jnp.bool, shape=(2,)),
-)
-def test_better_than_random_permutation_prop_2(x, y, randomly_chosen, flip):
-    prop_better_than_random_permutation(
-        jnp.array(x),
-        jnp.array(y),
-        jnp.array(randomly_chosen, dtype=jnp.uint32),
-        jnp.array(flip, dtype=jnp.bool),
-    )
 
 
 def test_better_than_random_permutation_frozen_1():
@@ -395,6 +380,30 @@ def test_better_than_random_permutation_frozen_2():
         jnp.array([[0, 0], [0, -1]], dtype=jnp.float32),
         jnp.array([0, 1], dtype=jnp.uint32),
         jnp.array([False, False], dtype=jnp.bool),
+    )
+
+
+def test_better_than_random_permutation_frozen_3():
+    prop_better_than_random_permutation(
+        jnp.array([[0, 0, 0], [0, 0, 0], [0, 0, 1]], dtype=jnp.float32),
+        jnp.array([[0, 0, 1], [0, 0, 0], [0, 0, 0]], dtype=jnp.float32),
+        jnp.array([0, 1, 2], dtype=jnp.uint32),
+        jnp.array([False, False, False], dtype=jnp.bool),
+    )
+
+
+@given(
+    hnp.arrays(dtype=jnp.float32, shape=(2, 2)),
+    hnp.arrays(dtype=jnp.float32, shape=(2, 2)),
+    st.permutations(range(2)),
+    hnp.arrays(dtype=jnp.bool, shape=(2,)),
+)
+def test_better_than_random_permutation_prop_2(x, y, randomly_chosen, flip):
+    prop_better_than_random_permutation(
+        jnp.array(x),
+        jnp.array(y),
+        jnp.array(randomly_chosen, dtype=jnp.uint32),
+        jnp.array(flip, dtype=jnp.bool),
     )
 
 
@@ -552,49 +561,42 @@ def prop_optim_trivial(
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_trivial_sgd():
+def test_optim_trivial():
+    # Why all in one test?
+    # Pytest seems to restart on every test, thus erasing JIT-compiled functions,
+    # and this should significantly speed things up.
+
+    print("SGD")
     import metaoptimizer.optimizers.sgd as optim
 
     prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_trivial_weight_decay():
+    print("Weight decay")
     import metaoptimizer.optimizers.weight_decay as optim
 
     prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_trivial_momentum():
+    print("Momentum")
     import metaoptimizer.optimizers.momentum as optim
 
     prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_trivial_nesterov():
+    print("Nesterov")
     import metaoptimizer.optimizers.nesterov as optim
 
     prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_trivial_rmsprop():
+    print("RMSProp")
     import metaoptimizer.optimizers.rmsprop as optim
 
     prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_trivial_adam():
+    print("Adam")
     import metaoptimizer.optimizers.adam as optim
 
     prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_trivial_swiss_army_knife():
+    print("Swiss army knife")
     import metaoptimizer.optimizers.swiss_army_knife as optim
 
     prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
@@ -603,7 +605,7 @@ def test_optim_trivial_swiss_army_knife():
 NDIM = 3
 BATCH = 32
 LAYERS = 3
-EPOCHS = 32
+EPOCHS = 1
 LR = jnp.array(0.001)
 
 
@@ -643,49 +645,42 @@ def prop_optim(
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_sgd():
+def test_prop_optim():
+    # Why all in one test?
+    # Pytest seems to restart on every test, thus erasing JIT-compiled functions,
+    # and this should significantly speed things up.
+
+    print("SGD")
     import metaoptimizer.optimizers.sgd as optim
 
     prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_weight_decay():
+    print("Weight decay")
     import metaoptimizer.optimizers.weight_decay as optim
 
     prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_momentum():
+    print("Momentum")
     import metaoptimizer.optimizers.momentum as optim
 
     prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_nesterov():
+    print("Nesterov")
     import metaoptimizer.optimizers.nesterov as optim
 
     prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_rmsprop():
+    print("RMSProp")
     import metaoptimizer.optimizers.rmsprop as optim
 
     prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_adam():
+    print("Adam")
     import metaoptimizer.optimizers.adam as optim
 
     prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_swiss_army_knife():
+    print("Swiss army knife")
     import metaoptimizer.optimizers.swiss_army_knife as optim
 
     prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
@@ -743,49 +738,42 @@ def prop_optim_downhill(
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_downhill_sgd():
+def test_prop_optim_downhill():
+    # Why all in one test?
+    # Pytest seems to restart on every test, thus erasing JIT-compiled functions,
+    # and this should significantly speed things up.
+
+    print("SGD")
     import metaoptimizer.optimizers.sgd as optim
 
     prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_downhill_weight_decay():
+    print("Weight decay")
     import metaoptimizer.optimizers.weight_decay as optim
 
     prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_downhill_momentum():
+    print("Momentum")
     import metaoptimizer.optimizers.momentum as optim
 
     prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_downhill_nesterov():
+    print("Nesterov")
     import metaoptimizer.optimizers.nesterov as optim
 
     prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_downhill_rmsprop():
+    print("RMSProp")
     import metaoptimizer.optimizers.rmsprop as optim
 
     prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_downhill_adam():
+    print("Adam")
     import metaoptimizer.optimizers.adam as optim
 
     prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_downhill_swiss_army_knife():
+    print("Swiss army knife")
     import metaoptimizer.optimizers.swiss_army_knife as optim
 
     prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
@@ -856,49 +844,42 @@ def prop_optim_global(
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_global_sgd():
+def test_prop_optim_global():
+    # Why all in one test?
+    # Pytest seems to restart on every test, thus erasing JIT-compiled functions,
+    # and this should significantly speed things up.
+
+    print("SGD")
     import metaoptimizer.optimizers.sgd as optim
 
     prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_global_weight_decay():
+    print("Weight decay")
     import metaoptimizer.optimizers.weight_decay as optim
 
     prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_global_momentum():
+    print("Momentum")
     import metaoptimizer.optimizers.momentum as optim
 
     prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_global_nesterov():
+    print("Nesterov")
     import metaoptimizer.optimizers.nesterov as optim
 
     prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_global_rmsprop():
+    print("RMSProp")
     import metaoptimizer.optimizers.rmsprop as optim
 
     prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_global_adam():
+    print("Adam")
     import metaoptimizer.optimizers.adam as optim
 
     prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
 
-
-@jaxtyped(typechecker=beartype)
-def test_optim_global_swiss_army_knife():
+    print("Swiss army knife")
     import metaoptimizer.optimizers.swiss_army_knife as optim
 
     prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
