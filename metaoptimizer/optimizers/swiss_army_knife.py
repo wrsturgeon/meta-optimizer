@@ -1,4 +1,4 @@
-from metaoptimizer.distributions import inverse_sigmoid
+from metaoptimizer.optimizers import inverse_sigmoid
 
 from beartype import beartype
 from beartype.typing import NamedTuple, Tuple

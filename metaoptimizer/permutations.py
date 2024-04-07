@@ -11,14 +11,9 @@ from typing import NamedTuple
 
 @jaxtyped(typechecker=beartype)
 def permute(x: Float[Array, "..."], indices: UInt[Array, "n"], axis: int) -> Array:
-    # TODO: disable these assertions in production
     n = x.shape[axis]
     assert indices.shape == (n,)  # needs to be checked only once
-    check(
-        jnp.all(indices >= 0),
-        "{indices} must be nonnegative everywhere",
-        indices=indices,
-    )  # implicit in the type signature
+    # TODO: disable these assertions in production!
     check(
         jnp.all(indices < n),
         "{indices} must be less than {n} everywhere",
@@ -111,23 +106,19 @@ def find_permutation_rec(
 
 @jaxtyped(typechecker=beartype)
 def find_permutation(
-    actual: Float[Array, "n ..."],
-    ideal: Float[Array, "n ..."],
+    actual: Float[Array, "n m"],
+    ideal: Float[Array, "n m"],
 ) -> Permutation:
     """
     Exhaustive search for layer-wise permutations minimizing a given loss
     that nonetheless, when all applied in order, reverse any intermediate permutations
     and output the correct indices in their original positions.
     """
-    n = actual.shape[0]
-    actual = actual.reshape(n, -1)
-    ideal = ideal.reshape(n, -1)
-    actual = actual / (
-        jnp.sqrt(jnp.mean(jnp.square(actual), axis=1, keepdims=True)) + 1e-8
-    )
-    ideal = ideal / (
-        jnp.sqrt(jnp.mean(jnp.square(ideal), axis=1, keepdims=True)) + 1e-8
-    )
+    n, _ = actual.shape
+    actual_std = jnp.sqrt(jnp.sum(jnp.square(actual), axis=1, keepdims=True)) + 1e-8
+    ideal_std = jnp.sqrt(jnp.sum(jnp.square(ideal), axis=1, keepdims=True)) + 1e-8
+    actual = actual / actual_std
+    ideal = ideal / ideal_std
 
     # Create a matrix distancing each row from each other row and its negation:
     stack_neg = lambda x: jnp.stack([x, -x], axis=1)[:, jnp.newaxis]

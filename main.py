@@ -61,7 +61,7 @@ permutation_flips = [
 opt_params_hist = []
 
 
-print("JIT-compiling the training loop...")
+print("Compiling the training loop...")
 
 
 # Training loop:

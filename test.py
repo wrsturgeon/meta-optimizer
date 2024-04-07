@@ -1,7 +1,7 @@
 from metaoptimizer import (
-    distributions,
     feedforward,
     permutations,
+    rotations,
     training,
 )
 from metaoptimizer.optimizers import Optimizer
@@ -25,7 +25,7 @@ import pytest
 
 
 TEST_COUNT_CI = 1000
-TEST_COUNT_NORMAL = 100  # doesn't really matter for end-users: extensively tested in CI
+TEST_COUNT_NORMAL = 100
 settings.register_profile(
     "no_deadline",
     deadline=None,
@@ -54,106 +54,6 @@ else:  # pragma: no cover
 
 
 @jaxtyped(typechecker=beartype)
-def prop_normalize_no_axis(x: Float[Array, "..."]):
-    if x.size == 0 or not jnp.all(jnp.isfinite(x)):
-        return
-    # Standard deviation is subject to (significant!) numerical error, so
-    # we have to check if all elements are literally equal.
-    zero_variance = jnp.all(jnp.isclose(x.ravel()[0], x))
-    if (not zero_variance) and jnp.isfinite(jnp.std(x)):
-        y = distributions.normalize(x)
-        assert jnp.abs(jnp.mean(y)) < 0.01
-        assert jnp.abs(jnp.std(y) - 1) < 0.01
-
-
-@given(hnp.arrays(dtype=jnp.float32, shape=(3, 3, 3)))
-@jaxtyped(typechecker=beartype)
-def test_normalize_no_axis_prop(x: ArrayLike):
-    prop_normalize_no_axis(jnp.array(x))
-
-
-@jaxtyped(typechecker=beartype)
-def test_normalize_no_axis():
-    prop_normalize_no_axis(jnp.array([-1, 1, -1, 1, -1], dtype=jnp.float32))
-
-
-# Identical to the above, except along one specific axis
-@jaxtyped(typechecker=beartype)
-def prop_normalize_with_axis(x: Float[Array, "..."], axis: int):
-    assert 0 <= axis < x.ndim
-    if not (jnp.isfinite(jnp.mean(x)) and jnp.isfinite(jnp.std(x))):
-        return
-    auto = distributions.normalize(x, axis)
-    manual = jnp.apply_along_axis(distributions.normalize, axis, x)
-    zero_variance = jnp.all(
-        jnp.isclose(jnp.apply_along_axis(lambda z: z[0:1], axis, x), x),
-        axis=axis,
-        keepdims=True,
-    )
-    loss = jnp.abs(auto - manual)
-    good = jnp.logical_or(zero_variance, loss < 0.01)
-    assert jnp.all(good)
-
-
-@jaxtyped(typechecker=beartype)
-def test_normalize_with_axis_1():
-    prop_normalize_with_axis(jnp.zeros([3, 3, 3]), axis=1)
-
-
-@jaxtyped(typechecker=beartype)
-def test_normalize_with_axis_2():
-    prop_normalize_with_axis(jnp.ones([3, 3, 3]), axis=0)
-
-
-@jaxtyped(typechecker=beartype)
-def test_normalize_with_axis_3():
-    prop_normalize_with_axis(
-        x=jnp.array(
-            [
-                [
-                    [jnp.nan, 0.0000000e00, 1.8206815e16],
-                    [1.8297095e16, 1.8297095e16, 1.8297095e16],
-                    [1.8297095e16, 1.8297095e16, 1.8297095e16],
-                ],
-                [
-                    [1.8297095e16, 1.8297095e16, 1.8297095e16],
-                    [1.8297095e16, 1.8297095e16, 1.8297095e16],
-                    [1.8297095e16, 1.8297095e16, 1.8297095e16],
-                ],
-                [
-                    [1.8297095e16, 1.8297095e16, 1.8297095e16],
-                    [1.8297095e16, 1.8297095e16, 1.8297095e16],
-                    [1.8297095e16, 1.8297095e16, 1.8297095e16],
-                ],
-            ],
-            dtype=jnp.float32,
-        ),
-        axis=0,
-    )
-
-
-@jaxtyped(typechecker=beartype)
-def test_normalize_with_axis_4():
-    prop_normalize_with_axis(
-        x=jnp.array(
-            [
-                [[0.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]],
-                [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]],
-                [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]],
-            ],
-            dtype=jnp.float32,
-        ),
-        axis=1,
-    )
-
-
-@given(hnp.arrays(dtype=jnp.float32, shape=(3, 3, 3)), st.integers(0, 2))
-@jaxtyped(typechecker=beartype)
-def test_normalize_with_axis_prop(x: ArrayLike, axis: int):
-    prop_normalize_with_axis(jnp.array(x), axis=axis)
-
-
-@jaxtyped(typechecker=beartype)
 def prop_kabsch(to_be_rotated: Float[Array, "..."], target: Float[Array, "..."]):
     assert to_be_rotated.shape == target.shape
     norm1 = jla.norm(to_be_rotated)
@@ -171,7 +71,7 @@ def prop_kabsch(to_be_rotated: Float[Array, "..."], target: Float[Array, "..."])
         return
     to_be_rotated /= norm1
     target /= norm2
-    R = distributions.kabsch(to_be_rotated, target)
+    R = rotations.kabsch(to_be_rotated, target)
     rotated = to_be_rotated @ R
     loss = jnp.abs(rotated - target)
     assert jnp.all(loss < 0.01)
@@ -180,7 +80,7 @@ def prop_kabsch(to_be_rotated: Float[Array, "..."], target: Float[Array, "..."])
 @jaxtyped(typechecker=beartype)
 def test_kabsch_1():
     eye = jnp.eye(1, 4).reshape(1, 1, 4)
-    actual = distributions.kabsch(eye, eye)
+    actual = rotations.kabsch(eye, eye)
     assert jnp.allclose(actual, jnp.eye(4, 4).reshape(1, 4, 4))
 
 
@@ -236,7 +136,7 @@ def test_rotate_and_compare_1():
         ],
         dtype=jnp.float32,
     )
-    norm, rotated, R = distributions.rotate_and_compare(actual, ideal)
+    norm, rotated, R = rotations.rotate_and_compare(actual, ideal)
     assert jnp.allclose(norm, 0)
     assert jnp.allclose(rotated, ideal)
     assert jnp.allclose(R, actual.transpose(0, 2, 1))
@@ -290,7 +190,7 @@ def prop_permutation_conjecture(
 ):
     # these lines (this comment +/- 1) are effectively just
     # generating a random rotation matrix stored in `R`
-    R = distributions.kabsch(r1, r2)
+    R = rotations.kabsch(r1, r2)
     assert R.shape[0] == 1
     R = R[0]
 
@@ -375,6 +275,19 @@ def test_permute_2():
     )
 
 
+def test_permute_3():
+    x = jnp.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=jnp.float32)
+    i = jnp.array([2, 1, 0], dtype=jnp.uint32)
+    assert jnp.allclose(
+        permutations.permute(x, i, axis=0),
+        jnp.array([[7, 8, 9], [4, 5, 6], [1, 2, 3]], dtype=jnp.float32),
+    )
+    assert jnp.allclose(
+        permutations.permute(x, i, axis=1),
+        jnp.array([[3, 2, 1], [6, 5, 4], [9, 8, 7]], dtype=jnp.float32),
+    )
+
+
 @jaxtyped(typechecker=beartype)
 def test_permute_size_check():
     x = jnp.eye(5, 5, dtype=jnp.float32)
@@ -416,8 +329,8 @@ def test_find_permutation_1():
 
 @jaxtyped(typechecker=beartype)
 def prop_better_than_random_permutation(
-    x: Float[Array, "n ..."],
-    y: Float[Array, "n ..."],
+    x: Float[Array, "n m"],
+    y: Float[Array, "n m"],
     randomly_chosen_indices: UInt[Array, "n"],
     randomly_chosen_flip: Bool[Array, "n"],
 ):
@@ -425,15 +338,24 @@ def prop_better_than_random_permutation(
         return
     allegedly_ideal = permutations.find_permutation(x, y)
     print(f"allegedly_ideal = {allegedly_ideal}")
-    xn = x / (jnp.sqrt(jnp.mean(jnp.square(x), axis=1, keepdims=True)) + 1e-8)
-    yn = y / (jnp.sqrt(jnp.mean(jnp.square(y), axis=1, keepdims=True)) + 1e-8)
-    ap = permutations.permute(xn, allegedly_ideal.indices, axis=0)
-    rp = permutations.permute(xn, randomly_chosen_indices, axis=0)
-    af = jnp.where(allegedly_ideal.flip, -ap, ap)
-    rf = jnp.where(randomly_chosen_flip, -rp, rp)
-    aL = jnp.sum(jnp.abs(y - af))
-    rL = jnp.sum(jnp.abs(y - rf))
-    assert aL <= rL
+    x = x / (jnp.sqrt(jnp.sum(jnp.square(x), axis=1, keepdims=True)) + 1e-8)
+    y = y / (jnp.sqrt(jnp.sum(jnp.square(y), axis=1, keepdims=True)) + 1e-8)
+    print("x")
+    print(x)
+    print("y")
+    print(y)
+    af = jnp.where(allegedly_ideal.flip[:, jnp.newaxis], -x, x)
+    rf = jnp.where(randomly_chosen_flip[:, jnp.newaxis], -x, x)
+    print("af")
+    print(af)
+    ap = permutations.permute(af, allegedly_ideal.indices, axis=0)
+    rp = permutations.permute(rf, randomly_chosen_indices, axis=0)
+    print("ap")
+    print(ap)
+    aL = jnp.sum(jnp.abs(y - ap))
+    rL = jnp.sum(jnp.abs(y - rp))
+    assert jnp.isclose(allegedly_ideal.loss, aL), f"{allegedly_ideal.loss} =/= {aL}"
+    assert aL <= rL, f"{aL} </= {rL}"
 
 
 @given(
@@ -448,6 +370,31 @@ def test_better_than_random_permutation_prop_2(x, y, randomly_chosen, flip):
         jnp.array(y),
         jnp.array(randomly_chosen, dtype=jnp.uint32),
         jnp.array(flip, dtype=jnp.bool),
+    )
+
+
+def test_better_than_random_permutation_frozen_1():
+    # First, test that we're normalizing the right axes:
+    x = jnp.array([[1, 1], [-1, 0]], dtype=jnp.float32)
+    x_std = jnp.sqrt(jnp.sum(jnp.square(x), axis=1, keepdims=True)) + 1e-8
+    x = x / x_std
+    sqrt_half = 1.0 / jnp.sqrt(2.0)
+    normalized = jnp.array([[sqrt_half, sqrt_half], [-1, 0]])
+    # If we normalized the wrong axis, it'd be [[sqrt_half 1] [-sqrt_half 0]]
+    prop_better_than_random_permutation(
+        x,
+        jnp.array([[1, 0], [0, 0]], dtype=jnp.float32),
+        jnp.array([0, 1], dtype=jnp.uint32),
+        jnp.array([False, False], dtype=jnp.bool),
+    )
+
+
+def test_better_than_random_permutation_frozen_2():
+    prop_better_than_random_permutation(
+        jnp.array([[0, 1], [0, 0]], dtype=jnp.float32),
+        jnp.array([[0, 0], [0, -1]], dtype=jnp.float32),
+        jnp.array([0, 1], dtype=jnp.uint32),
+        jnp.array([False, False], dtype=jnp.bool),
     )
 
 
