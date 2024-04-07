@@ -603,49 +603,49 @@ def prop_optim_trivial(
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_sgd():
+def test_optim_trivial_sgd():
     import metaoptimizer.optimizers.sgd as optim
 
     prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_weight_decay():
+def test_optim_trivial_weight_decay():
     import metaoptimizer.optimizers.weight_decay as optim
 
     prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_momentum():
+def test_optim_trivial_momentum():
     import metaoptimizer.optimizers.momentum as optim
 
     prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_nesterov():
+def test_optim_trivial_nesterov():
     import metaoptimizer.optimizers.nesterov as optim
 
     prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_rmsprop():
+def test_optim_trivial_rmsprop():
     import metaoptimizer.optimizers.rmsprop as optim
 
     prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_adam():
+def test_optim_trivial_adam():
     import metaoptimizer.optimizers.adam as optim
 
     prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_swiss_army_knife():
+def test_optim_trivial_swiss_army_knife():
     import metaoptimizer.optimizers.swiss_army_knife as optim
 
     prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
