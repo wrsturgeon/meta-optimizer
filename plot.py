@@ -22,6 +22,8 @@ def run(directory: str = os.path.join(os.getcwd(), "logs")) -> None:
             without_ext, ext = os.path.splitext(f)
             if ext == ".npy":
                 plt.plot(np.load(f))
+                # plt.gca().set_ylim([0.0, 1.0])
+                plt.ticklabel_format(style="plain", useOffset=False)
                 plt.savefig(without_ext + ".png", dpi=DPI)
                 plt.close()
             else:

@@ -22,9 +22,9 @@ print("Setting up the model architecture...")
 # Hyper-hyperparameters?
 NDIM = 3  # Input/output vector dimensionality
 BATCH = 32  # Number of inputs tp propagate in parallel
-LAYERS = 3  # Number of `nl(W @ x + B)` layers in our feedforward model
+LAYERS = 2  # Number of `nl(W @ x + B)` layers in our feedforward model
 POWER = jnp.array(1.0)  # e.g. 1 for L1 loss, 2 for L2, etc.
-EPOCHS = 10000
+EPOCHS = 20000
 
 # Weight initialization (note `w_ideal` is really the *goal*)
 [w, w_ideal] = [
@@ -74,19 +74,7 @@ for century in range(0, EPOCHS, EPOCH_PERCENT):
         x = jrnd.normal(k, [BATCH, NDIM])
         err, y_ideal = jit_forward_pass(w_ideal, x)
         err.throw()
-        # err, (w, opt_state, L) = training.step(
-        #     w,
-        #     forward_pass,
-        #     x,
-        #     y_ideal,
-        #     optimizer,
-        #     opt_params,
-        #     opt_state,
-        #     POWER,
-        # )
-
-        # TODO: RENAME `_` to `opt_params` to re-enable learning optimizer params!
-        err, (w, opt_state, _, permutation, L) = training.step_global(
+        err, (w, opt_state, opt_params, permutation, L) = training.step_global(
             w,
             forward_pass,
             x,

@@ -65,10 +65,10 @@
               ${python} -m coverage report -m --fail-under=100
             '';
           default = ''
-            ${python-with [ default-pkgs ]} $out/main.py
+            JAX_ENABLE_X64=1 ${python-with [ default-pkgs ]} $out/main.py
           '';
           plot = ''
-            ${python-with [ default-pkgs ]} $out/plot.py
+            JAX_ENABLE_X64=1 ${python-with [ default-pkgs ]} $out/plot.py
           '';
         };
       in

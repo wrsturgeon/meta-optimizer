@@ -19,6 +19,9 @@ ForwardPass = Callable[
 ]
 
 
+OPTIMIZER_LR = jnp.array(0.25, dtype=jnp.float64)
+
+
 @jaxtyped(typechecker=beartype)
 def loss(
     weights: PyTree[Float[Array, "..."]],
@@ -150,7 +153,7 @@ def step_downhill(
         weights,
         dLdw,
     )
-    opt_params_adjusted = tree_map(lambda w, d: w - 0.01 * d, opt_params, dLdo)
+    opt_params_adjusted = tree_map(lambda w, d: w - OPTIMIZER_LR * d, opt_params, dLdo)
     return (
         weights_adjusted,
         opt_state_adjusted,
@@ -217,7 +220,7 @@ def step_global(
         dLdw,
         global_minimum,
     )
-    opt_params_adjusted = tree_map(lambda w, d: w - 0.01 * d, opt_params, dLdo)
+    opt_params_adjusted = tree_map(lambda w, d: w - OPTIMIZER_LR * d, opt_params, dLdo)
     return (
         weights_adjusted,
         opt_state_adjusted,

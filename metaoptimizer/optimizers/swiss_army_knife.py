@@ -5,19 +5,19 @@ from beartype.typing import NamedTuple, Tuple
 from jax import nn as jnn, numpy as jnp
 from jax.experimental.checkify import check
 from jax.tree_util import tree_map, tree_reduce
-from jaxtyping import jaxtyped, Array, Float, PyTree
+from jaxtyping import jaxtyped, Array, Float, Float64, PyTree
 import operator
 
 
 @jaxtyped(typechecker=beartype)
 class Params(NamedTuple):
-    log_lr: Float[Array, ""]
-    inv_sig_moving_average_decay: Float[Array, ""]
-    inv_sig_moving_square_decay: Float[Array, ""]
-    inv_sig_momentum: Float[Array, ""]
-    log_overstep: Float[Array, ""]
-    inv_sig_weight_decay: Float[Array, ""]
-    log_epsilon: Float[Array, ""]
+    log_lr: Float64[Array, ""]
+    inv_sig_moving_average_decay: Float64[Array, ""]
+    inv_sig_moving_square_decay: Float64[Array, ""]
+    inv_sig_momentum: Float64[Array, ""]
+    log_overstep: Float64[Array, ""]
+    inv_sig_weight_decay: Float64[Array, ""]
+    log_epsilon: Float64[Array, ""]
 
 
 @jaxtyped(typechecker=beartype)
@@ -32,13 +32,13 @@ class State(NamedTuple):
 
 @jaxtyped(typechecker=beartype)
 def defaults(
-    lr: Float[Array, ""] = jnp.array(0.01),
-    moving_average_decay: Float[Array, ""] = jnp.array(0.9),
-    moving_square_decay: Float[Array, ""] = jnp.array(0.999),
-    momentum: Float[Array, ""] = jnp.array(1e-8),
-    overstep: Float[Array, ""] = jnp.array(1e-8),
-    weight_decay: Float[Array, ""] = jnp.array(0.999),
-    epsilon: Float[Array, ""] = jnp.array(1e-8),
+    lr: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
+    moving_average_decay: Float64[Array, ""] = jnp.array(0.9, dtype=jnp.float64),
+    moving_square_decay: Float64[Array, ""] = jnp.array(0.999, dtype=jnp.float64),
+    momentum: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
+    overstep: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
+    weight_decay: Float64[Array, ""] = jnp.array(0.999, dtype=jnp.float64),
+    epsilon: Float64[Array, ""] = jnp.array(1e-8, dtype=jnp.float64),
 ) -> Params:
     return Params(
         log_lr=jnp.log(lr),

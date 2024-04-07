@@ -13,20 +13,19 @@ from typing import NamedTuple
 def permute(x: Float[Array, "..."], indices: UInt[Array, "n"], axis: int) -> Array:
     n = x.shape[axis]
     assert indices.shape == (n,)  # needs to be checked only once
-    # TODO: disable these assertions in production!
-    check(
-        jnp.all(indices < n),
-        "{indices} must be less than {n} everywhere",
-        indices=indices,
-        n=jnp.array(n),
-    )
-    for i in range(indices.size):
-        check(
-            jnp.logical_not(jnp.isin(indices[i], indices[:i])),
-            "Each element in {indices} must be unique (#{i} is not)",
-            indices=indices,
-            i=jnp.array(i),
-        )
+    # check(
+    #     jnp.all(indices < n),
+    #     "{indices} must be less than {n} everywhere",
+    #     indices=indices,
+    #     n=jnp.array(n),
+    # )
+    # for i in range(indices.size):
+    #     check(
+    #         jnp.logical_not(jnp.isin(indices[i], indices[:i])),
+    #         "Each element in {indices} must be unique (#{i} is not)",
+    #         indices=indices,
+    #         i=jnp.array(i),
+    #     )
     return jnp.apply_along_axis(lambda z: z[indices], axis, x)
 
 
