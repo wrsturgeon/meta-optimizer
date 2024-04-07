@@ -423,10 +423,12 @@ def prop_better_than_random_permutation(
 ):
     if not (jnp.all(jnp.isfinite(x)) and jnp.all(jnp.isfinite(y))):
         return
-    # TODO: incorporate flipping
     allegedly_ideal = permutations.find_permutation(x, y)
-    ap = permutations.permute(x, allegedly_ideal.indices, axis=0)
-    rp = permutations.permute(x, randomly_chosen_indices, axis=0)
+    print(f"allegedly_ideal = {allegedly_ideal}")
+    xn = x / (jnp.sqrt(jnp.mean(jnp.square(x), axis=1, keepdims=True)) + 1e-8)
+    yn = y / (jnp.sqrt(jnp.mean(jnp.square(y), axis=1, keepdims=True)) + 1e-8)
+    ap = permutations.permute(xn, allegedly_ideal.indices, axis=0)
+    rp = permutations.permute(xn, randomly_chosen_indices, axis=0)
     af = jnp.where(allegedly_ideal.flip, -ap, ap)
     rf = jnp.where(randomly_chosen_flip, -rp, rp)
     aL = jnp.sum(jnp.abs(y - af))
