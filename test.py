@@ -584,6 +584,73 @@ def test_layer_distance():
     assert jnp.all(jnp.logical_not(ps[1].flip))
 
 
+def prop_optim_trivial(
+    optim: Optimizer,
+    opt_params: PyTree[Float[Array, ""]],
+    opt_state_init: Callable[
+        [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
+        PyTree[Float[Array, "..."]],
+    ],
+    power: Float[Array, ""] = jnp.array(1.0, dtype=jnp.float32),
+):
+    x = jnp.array([[30], [-10]], dtype=jnp.float32)
+    opt_state = opt_state_init(x, opt_params)
+    loss = lambda x: jnp.sum(jnp.abs(10 - x))
+    dLdx = jit(grad(loss))
+    for _ in range(100):
+        opt_state, x = jit(optim)(opt_params, opt_state, x, dLdx(x))
+    assert loss(x) < 1
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_sgd():
+    import metaoptimizer.optimizers.sgd as optim
+
+    prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_weight_decay():
+    import metaoptimizer.optimizers.weight_decay as optim
+
+    prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_momentum():
+    import metaoptimizer.optimizers.momentum as optim
+
+    prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_nesterov():
+    import metaoptimizer.optimizers.nesterov as optim
+
+    prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_rmsprop():
+    import metaoptimizer.optimizers.rmsprop as optim
+
+    prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_adam():
+    import metaoptimizer.optimizers.adam as optim
+
+    prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
+
+
+@jaxtyped(typechecker=beartype)
+def test_optim_swiss_army_knife():
+    import metaoptimizer.optimizers.swiss_army_knife as optim
+
+    prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
+
+
 NDIM = 3
 BATCH = 32
 LAYERS = 3
@@ -599,7 +666,7 @@ def prop_optim(
         [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
         PyTree[Float[Array, "..."]],
     ],
-    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
+    power: Float[Array, ""] = jnp.array(1.0, dtype=jnp.float32),
 ):
     w = feedforward.init([NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42))
     key = jrnd.PRNGKey(42)
@@ -683,7 +750,7 @@ def prop_optim_downhill(
         [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
         PyTree[Float[Array, "..."]],
     ],
-    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
+    power: Float[Array, ""] = jnp.array(1.0, dtype=jnp.float32),
 ):
     # print(f"Initl optimizer parameters: {opt_params}")
     orig_opt_params = opt_params
@@ -783,7 +850,7 @@ def prop_optim_global(
         [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
         PyTree[Float[Array, "..."]],
     ],
-    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
+    power: Float[Array, ""] = jnp.array(1.0, dtype=jnp.float32),
 ):
     # print(f"Initl optimizer parameters: {opt_params}")
     orig_opt_params = opt_params

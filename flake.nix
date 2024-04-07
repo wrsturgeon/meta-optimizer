@@ -62,12 +62,7 @@
               ${python} -m black --check .
               ${python} -m mypy .
               ${python} -m coverage run --omit='/nix/*' -m pytest -Werror test.py
-              ${python} -m coverage report -m
-              export COVPCT=$(${python} -m coverage report -m | tail -n 1 | tr -s ' ' | cut -d ' ' -f 4)
-              if [ "''${COVPCT}" != '100%' ]; then
-                echo "Coverage reported ''${COVPCT} overall, but we expected 100%"
-                exit 1
-              fi
+              ${python} -m coverage report -m --fail-under=100
             '';
           default = ''
             ${python-with [ default-pkgs ]} $out/main.py
@@ -85,26 +80,34 @@
         packages = {
           default = pkgs.stdenv.mkDerivation {
             inherit pname src version;
-            buildPhase = ''
-              mkdir -p $out/bin
-              mv ./* $out/
-              ${builtins.foldl' (a: b: a + b) "" (
-                builtins.attrValues (
-                  builtins.mapAttrs (
-                    k: v:
-                    let
-                      bin = "$out/bin/${instantiate-default k}";
-                    in
-                    ''
+            buildPhase =
+              let
+                chmod = "${pkgs.coreutils}/bin/chmod";
+                echo = "${pkgs.coreutils}/bin/echo";
+                mkdir = "${pkgs.coreutils}/bin/mkdir";
+                mv = "${pkgs.coreutils}/bin/mv";
+                shebang = "#!${pkgs.bash}/bin/bash";
+              in
+              ''
+                ${mkdir} -p $out/bin
+                ${mv} ./* $out/
+                ${builtins.foldl' (a: b: a + b) "" (
+                  builtins.attrValues (
+                    builtins.mapAttrs (
+                      k: v:
+                      let
+                        bin = "$out/bin/${instantiate-default k}";
+                      in
+                      ''
 
-                      echo '#!${pkgs.bash}/bin/bash' > ${bin}
-                      echo "${v}" >> ${bin}
-                      chmod +x ${bin}
-                    ''
-                  ) apps
-                )
-              )}
-            '';
+                        ${echo} '${shebang}' > ${bin}
+                        ${echo} "${v}" >> ${bin}
+                        ${chmod} +x ${bin}
+                      ''
+                    ) apps
+                  )
+                )}
+              '';
             # checkPhase =
             #   let
             #     python = python-with [

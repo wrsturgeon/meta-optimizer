@@ -35,8 +35,8 @@ def defaults(
     lr: Float[Array, ""] = jnp.array(0.01),
     moving_average_decay: Float[Array, ""] = jnp.array(0.9),
     moving_square_decay: Float[Array, ""] = jnp.array(0.999),
-    momentum: Float[Array, ""] = jnp.array(0.9),
-    overstep: Float[Array, ""] = jnp.array(0.9),
+    momentum: Float[Array, ""] = jnp.array(1e-8),
+    overstep: Float[Array, ""] = jnp.array(1e-8),
     weight_decay: Float[Array, ""] = jnp.array(0.999),
     epsilon: Float[Array, ""] = jnp.array(1e-8),
 ) -> Params:

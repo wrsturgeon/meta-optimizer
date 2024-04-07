@@ -38,10 +38,7 @@ EPOCHS = 10000
 # Optimizer initialization
 # TODO: Is there a Pythonic way to reduce redundancy here?
 optimizer = optim.update
-opt_params = optim.defaults(
-    momentum=jnp.array(0.9),
-    overstep=jnp.array(0.001),
-)
+opt_params = optim.defaults()
 opt_state = optim.init(w, opt_params)
 
 # Replicable pseudorandomness
