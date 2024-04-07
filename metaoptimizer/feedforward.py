@@ -18,6 +18,7 @@ def run(
 ) -> Float[Array, "batch n_out"]:
     batch, ndim_in = x.shape
     x = x[..., jnp.newaxis]
+    assert x.ndim == 3
     check(
         jnp.all(jnp.isfinite(x)),
         """
@@ -29,7 +30,10 @@ def run(
     )
     n = w.layers()
     for i in range(n):
-        y = nl(w.W[i] @ x + w.B[i][jnp.newaxis, ..., jnp.newaxis])
+        assert w.W[i].ndim == 2
+        assert w.B[i].ndim == 1
+        y = nl(w.W[i] @ x + w.B[i][jnp.newaxis, :, jnp.newaxis])
+        assert y.ndim == 3
         check(
             jnp.all(jnp.isfinite(y)),
             """
@@ -50,6 +54,9 @@ def run(
             y=y,
         )
         x = y
+        del y
+    assert x.ndim == 3
+    assert x.shape[-1] == 1
     return x[..., 0]
 
 

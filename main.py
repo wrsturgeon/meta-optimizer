@@ -2,7 +2,7 @@ print("Importing libraries...")
 
 import plot  # Relative import: `plot.py`
 
-from metaoptimizer import feedforward, training
+from metaoptimizer import feedforward, permutations, training
 from metaoptimizer.optimizers import swiss_army_knife as optim
 
 from jax import jit, nn as jnn, numpy as jnp, random as jrnd
@@ -108,14 +108,47 @@ cwd = os.getcwd()
 path = lambda *args: os.path.join(cwd, *args)
 if os.path.exists(path("logs")):
     shutil.rmtree(path("logs"), ignore_errors=True)
-os.makedirs(path("logs", "optimizer"), exist_ok=True)
-os.makedirs(path("logs", "permutations"), exist_ok=True)
-os.makedirs(path("logs", "weight_distances"), exist_ok=True)
+os.makedirs(path("logs", "optimizer"))
+os.makedirs(path("logs", "permutations"))
+os.makedirs(path("logs", "weights"))
+os.makedirs(path("logs", "weight_distances"))
 np.save(path("logs", "losses.npy"), losses, allow_pickle=False)
 for i in range(LAYERS):
     np.save(
         path("logs", "weight_distances", f"layer_{i}.npy"),
         weight_distances[i],
+        allow_pickle=False,
+    )
+    os.makedirs(path("logs", "weights", f"layer_{i}", "weights"))
+    os.makedirs(path("logs", "weights", f"layer_{i}", "biases"))
+    np.save(
+        path("logs", "weights", f"layer_{i}", "weights", "ideal_orig.npy"),
+        w_ideal.W[i],
+        allow_pickle=False,
+    )
+    np.save(
+        path("logs", "weights", f"layer_{i}", "weights", "ideal_perm.npy"),
+        permutations.permute(w_ideal.W[i], permutation[i], axis=0),
+        allow_pickle=False,
+    )
+    np.save(
+        path("logs", "weights", f"layer_{i}", "weights", "final.npy"),
+        w.W[i],
+        allow_pickle=False,
+    )
+    np.save(
+        path("logs", "weights", f"layer_{i}", "biases", "ideal_orig.npy"),
+        w_ideal.B[i],
+        allow_pickle=False,
+    )
+    np.save(
+        path("logs", "weights", f"layer_{i}", "biases", "ideal_perm.npy"),
+        permutations.permute(w_ideal.B[i], permutation[i], axis=0),
+        allow_pickle=False,
+    )
+    np.save(
+        path("logs", "weights", f"layer_{i}", "biases", "final.npy"),
+        w.B[i],
         allow_pickle=False,
     )
 for i in range(NONTERMINAL_LAYERS):

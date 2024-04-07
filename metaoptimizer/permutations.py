@@ -10,9 +10,19 @@ from typing import NamedTuple
 
 
 @jaxtyped(typechecker=beartype)
-def permute(x: Float[Array, "..."], indices: UInt[Array, "n"], axis: int) -> Array:
+class Permutation(NamedTuple):
+    """Description of a permutation on some tensor (without explicitly carrying around that tensor)."""
+
+    indices: UInt[Array, "n"]
+    flip: Bool[Array, "n"]
+    loss: Float[Array, ""]  # TODO: doesn't belong in this data structure
+    # TODO: REPLACE `flip` WITH GENERALIZED +/- COEFFICIENTS
+
+
+@jaxtyped(typechecker=beartype)
+def permute(x: Float[Array, "..."], permutation: Permutation, axis: int) -> Array:
     n = x.shape[axis]
-    assert indices.shape == (n,)  # needs to be checked only once
+    assert permutation.indices.shape == permutation.flip.shape == (n,)
     # check(
     #     jnp.all(indices < n),
     #     "{indices} must be less than {n} everywhere",
@@ -26,17 +36,11 @@ def permute(x: Float[Array, "..."], indices: UInt[Array, "n"], axis: int) -> Arr
     #         indices=indices,
     #         i=jnp.array(i),
     #     )
-    return jnp.apply_along_axis(lambda z: z[indices], axis, x)
-
-
-@jaxtyped(typechecker=beartype)
-class Permutation(NamedTuple):
-    """Description of a permutation on some tensor (without explicitly carrying around that tensor)."""
-
-    indices: UInt[Array, "n"]
-    flip: Bool[Array, "n"]
-    loss: Float[Array, ""]
-    # TODO: REPLACE `flip` WITH GENERALIZED +/- COEFFICIENTS (VERY NECESSARY)
+    permuted = jnp.apply_along_axis(lambda z: z[permutation.indices], axis, x)
+    flip = permutation.flip
+    while flip.ndim < permuted.ndim:
+        flip = flip[..., jnp.newaxis]
+    return jnp.where(flip, -permuted, permuted)
 
 
 @jaxtyped(typechecker=beartype)
@@ -150,7 +154,7 @@ def find_permutation_weights(
 @jaxtyped(typechecker=beartype)
 def permute_hidden_layers(
     w: Weights,
-    ps: List[UInt[Array, "..."]],
+    ps: List[Permutation],
 ) -> PyTree[Float[Array, "..."]]:
     """Permute hidden layers' columns locally without changing the output of a network."""
     n = len(ps)
