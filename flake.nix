@@ -58,7 +58,7 @@
               ];
             in
             ''
-              set -eux
+              set -eu
               ${python} -m black --check .
               ${python} -m mypy .
               ${python} -m coverage run --omit='/nix/*' -m pytest -Werror test.py
