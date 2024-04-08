@@ -172,20 +172,44 @@ def test_feedforward_id_prop(np_x: ArrayLike):
 
 
 @jaxtyped(typechecker=beartype)
-def test_feedforward_init_1():
-    w = feedforward.init([5, 42, 3, 8, 7], jrnd.PRNGKey(42))
-    y = feedforward.run(w, jnp.ones([1, 5]), nl=jnn.gelu)
+def test_feedforward_init_deterministic_1():
+    w = feedforward.init([5, 42, 3, 8, 7], jrnd.PRNGKey(42), random_biases=False)
+    y = feedforward.run(w, jnp.ones([1, 5], dtype=jnp.float32), nl=jnn.gelu)
     assert jnp.allclose(
         y,
         jnp.array(
             [
-                0.40948272,
-                0.14077032,
-                -0.05583315,
-                -0.15906703,
-                -0.05009099,
-                0.2515578,
-                -0.13697886,
+                [
+                    0.374775,
+                    0.11936927,
+                    -0.04822215,
+                    -0.11765111,
+                    -0.10859659,
+                    0.03428617,
+                    -0.06014447,
+                ]
+            ]
+        ),
+    )
+
+
+@jaxtyped(typechecker=beartype)
+def test_feedforward_init_deterministic_2():
+    w = feedforward.init([5, 42, 3, 8, 7], jrnd.PRNGKey(42), random_biases=True)
+    y = feedforward.run(w, jnp.ones([1, 5], dtype=jnp.float32), nl=jnn.gelu)
+    assert jnp.allclose(
+        y,
+        jnp.array(
+            [
+                [
+                    0.32583871,
+                    -0.14663154,
+                    -0.16295604,
+                    2.43591889,
+                    0.82002436,
+                    -0.03517749,
+                    -0.16181449,
+                ]
             ]
         ),
     )
@@ -493,7 +517,7 @@ def test_permute_hidden_layers_1():
             [jnp.zeros([5, 5]) for _ in range(3)], [jnp.zeros([5]) for _ in range(3)]
         ),
         [no_flip(range(5)) for _ in range(2)],
-        jnp.zeros([1, 5]),
+        jnp.zeros([1, 5], dtype=jnp.float32),
     )
 
 
@@ -640,10 +664,14 @@ def prop_optim(
     ],
     power: Float[Array, ""] = jnp.array(1.0, dtype=jnp.float32),
 ):
-    w = feedforward.init([NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42))
+    w = feedforward.init(
+        [NDIM for _ in range(LAYERS + 1)],
+        jrnd.PRNGKey(42),
+        random_biases=True,
+    )
     key = jrnd.PRNGKey(42)
-    orig_x = jrnd.normal(key, [BATCH, NDIM])
-    forward_pass: ForwardPass = feedforward.run
+    orig_x = jrnd.normal(key, [BATCH, NDIM], dtype=jnp.float32)
+    forward_pass = feedforward.run
     eval_weights = jit(
         lambda weights: checkify(training.loss, errors=all_checks)(
             weights, forward_pass, orig_x, jnp.sin(10 * orig_x), power
@@ -654,7 +682,7 @@ def prop_optim(
     opt_state = opt_state_init(w, opt_params)
     for _ in range(EPOCHS):
         k, key = jrnd.split(key)
-        x = jrnd.normal(k, [BATCH, NDIM])
+        x = jrnd.normal(k, [BATCH, NDIM], dtype=jnp.float32)
         err, (w, opt_state, _) = training.step(
             w, forward_pass, x, jnp.sin(10 * x), optim, opt_params, opt_state, power
         )
@@ -719,10 +747,14 @@ def prop_optim_downhill(
 ):
     # print(f"Initl optimizer parameters: {opt_params}")
     orig_opt_params = opt_params
-    w = feedforward.init([NDIM for _ in range(LAYERS + 1)], jrnd.PRNGKey(42))
+    w = feedforward.init(
+        [NDIM for _ in range(LAYERS + 1)],
+        jrnd.PRNGKey(42),
+        random_biases=True,
+    )
     key = jrnd.PRNGKey(42)
-    orig_x = jrnd.normal(key, [BATCH, NDIM])
-    forward_pass: ForwardPass = feedforward.run
+    orig_x = jrnd.normal(key, [BATCH, NDIM], dtype=jnp.float32)
+    forward_pass = feedforward.run
     eval_weights = jit(
         lambda weights: checkify(training.loss_and_grad, errors=all_checks)(
             weights, forward_pass, orig_x, jnp.sin(10 * orig_x), power
@@ -733,7 +765,7 @@ def prop_optim_downhill(
     opt_state = opt_state_init(w, opt_params)
     for _ in range(EPOCHS):
         k, key = jrnd.split(key)
-        x = jrnd.normal(k, [BATCH, NDIM])
+        x = jrnd.normal(k, [BATCH, NDIM], dtype=jnp.float32)
         err, aux = training.step_downhill(
             w,
             forward_pass,
@@ -816,12 +848,13 @@ def prop_optim_global(
         feedforward.init(
             [NDIM for _ in range(LAYERS + 1)],
             jrnd.PRNGKey(42 + i),
+            random_biases=True,
         )
         for i in range(2)
     ]
     key = jrnd.PRNGKey(42)
-    orig_x = jrnd.normal(key, [BATCH, NDIM])
-    forward_pass: ForwardPass = feedforward.run
+    orig_x = jrnd.normal(key, [BATCH, NDIM], dtype=jnp.float32)
+    forward_pass = feedforward.run
     jit_forward_pass = jit(checkify(forward_pass, errors=all_checks))
     err, orig_y = jit_forward_pass(w_ideal, orig_x)
     err.throw()
@@ -836,7 +869,7 @@ def prop_optim_global(
     opt_state = opt_state_init(w, opt_params)
     for _ in range(EPOCHS):
         k, key = jrnd.split(key)
-        x = jrnd.normal(k, [BATCH, NDIM])
+        x = jrnd.normal(k, [BATCH, NDIM], dtype=jnp.float32)
         err, y_ideal = jit_forward_pass(w_ideal, x)
         err.throw()
         err, (w, opt_state, opt_params, _, _) = training.step_global(

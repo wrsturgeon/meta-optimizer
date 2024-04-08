@@ -9,27 +9,27 @@ from jax import grad, jit, numpy as jnp, value_and_grad
 from jax.lax import stop_gradient
 from jax.tree_util import tree_map, tree_reduce, tree_structure
 from jax.experimental.checkify import all_checks, checkify
-from jaxtyping import jaxtyped, Array, Float, PyTree, UInt
+from jaxtyping import jaxtyped, Array, Float32, Float64, PyTree, UInt
 import operator
 
 
 ForwardPass = Callable[
-    [PyTree[Float[Array, "..."]], Float[Array, "batch ndim_in"]],
-    Float[Array, "batch ndim_out"],
+    [PyTree[Float64[Array, "..."]], Float32[Array, "batch ndim_in"]],
+    Float32[Array, "batch ndim_out"],
 ]
 
 
-OPTIMIZER_LR = jnp.array(0.25, dtype=jnp.float64)
+OPTIMIZER_LR = jnp.array(0.25, dtype=jnp.float32)
 
 
 @jaxtyped(typechecker=beartype)
 def loss(
-    weights: PyTree[Float[Array, "..."]],
+    weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
-    inputs: Float[Array, "batch ndim_in"],
-    ground_truth: Float[Array, "batch ndim_out"],
-    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
-) -> Float[Array, ""]:
+    inputs: Float32[Array, "batch ndim_in"],
+    ground_truth: Float32[Array, "batch ndim_out"],
+    power: Float32[Array, ""] = jnp.ones([], dtype=jnp.float32),
+) -> Float32[Array, ""]:
     outputs = forward_pass(weights, inputs)
     assert isinstance(outputs, jnp.ndarray), f"`{outputs}` is not a JAX array"
     assert (
@@ -47,18 +47,18 @@ loss_and_grad = value_and_grad(loss)
 @partial(checkify, errors=all_checks)
 @jaxtyped(typechecker=beartype)
 def step(
-    weights: PyTree[Float[Array, "..."]],
+    weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
-    inputs: Float[Array, "batch ndim_in"],
-    ground_truth: Float[Array, "batch ndim_out"],
+    inputs: Float32[Array, "batch ndim_in"],
+    ground_truth: Float32[Array, "batch ndim_out"],
     optim_parameterized: Optimizer,
-    opt_params: PyTree[Float[Array, ""]],
-    opt_state: PyTree[Float[Array, "..."]],
-    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
+    opt_params: PyTree[Float64[Array, ""]],
+    opt_state: PyTree[Float64[Array, "..."]],
+    power: Float32[Array, ""] = jnp.ones([], dtype=jnp.float32),
 ) -> Tuple[
-    PyTree[Float[Array, "..."]],
-    PyTree[Float[Array, "..."]],
-    Float[Array, ""],
+    PyTree[Float64[Array, "..."]],
+    PyTree[Float64[Array, "..."]],
+    Float32[Array, ""],
 ]:
     L, dLdw = loss_and_grad(weights, forward_pass, inputs, ground_truth, power)
     opt_state_adjusted, weights_adjusted = optim_parameterized(
@@ -69,17 +69,18 @@ def step(
 
 @jaxtyped(typechecker=beartype)
 def update_and_retest(
-    weights: PyTree[Float[Array, "..."]],
+    weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
-    inputs: Float[Array, "batch ndim_in"],
-    ground_truth: Float[Array, "batch ndim_out"],
+    inputs: Float32[Array, "batch ndim_in"],
+    ground_truth: Float32[Array, "batch ndim_out"],
     optim_parameterized: Optimizer,
-    opt_params: PyTree[Float[Array, ""]],
-    opt_state: PyTree[Float[Array, "..."]],
-    last_dLdw: PyTree[Float[Array, "..."]],
-    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
+    opt_params: PyTree[Float32[Array, ""]],
+    opt_state: PyTree[Float32[Array, "..."]],
+    last_dLdw: PyTree[Float64[Array, "..."]],
+    power: Float32[Array, ""] = jnp.ones([], dtype=jnp.float32),
 ) -> Tuple[
-    Float[Array, ""], Tuple[PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]]
+    Float32[Array, ""],
+    Tuple[PyTree[Float64[Array, "..."]], PyTree[Float64[Array, "..."]]],
 ]:
     opt_state_adjusted, weights_adjusted = optim_parameterized(
         opt_params, opt_state, weights, last_dLdw
@@ -92,12 +93,12 @@ def update_and_retest(
 
 @jaxtyped(typechecker=beartype)
 def slope_away_from_local_minimum(
-    opt_params: PyTree[Float[Array, ""]],
-    opt_state: PyTree[Float[Array, "..."]],
+    opt_params: PyTree[Float64[Array, ""]],
+    opt_state: PyTree[Float64[Array, "..."]],
     optim_parameterized: Optimizer,
-    weights: PyTree[Float[Array, "..."]],
-    dLdw: PyTree[Float[Array, "..."]],
-) -> Float[Array, ""]:
+    weights: PyTree[Float64[Array, "..."]],
+    dLdw: PyTree[Float64[Array, "..."]],
+) -> Float32[Array, ""]:
     # TODO: directly do the math instead of recomputing,
     # but make sure it's right (at least here I'm sure)
     # ALL THIS IS REALLY DOING IS MINIMIZING `dLdw` BY MOVING `weights`
@@ -114,21 +115,21 @@ def slope_away_from_local_minimum(
 @partial(checkify, errors=all_checks)
 @jaxtyped(typechecker=beartype)
 def step_downhill(
-    weights: PyTree[Float[Array, "..."]],
+    weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
-    inputs: Float[Array, "batch ndim_in"],
-    ground_truth: Float[Array, "batch ndim_out"],
+    inputs: Float32[Array, "batch ndim_in"],
+    ground_truth: Float32[Array, "batch ndim_out"],
     optim_parameterized: Optimizer,
-    opt_params: PyTree[Float[Array, ""]],
-    opt_state: PyTree[Float[Array, "..."]],
-    last_dLdw: PyTree[Float[Array, "..."]],
-    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
+    opt_params: PyTree[Float64[Array, ""]],
+    opt_state: PyTree[Float64[Array, "..."]],
+    last_dLdw: PyTree[Float64[Array, "..."]],
+    power: Float32[Array, ""] = jnp.ones([], dtype=jnp.float32),
 ) -> Tuple[
-    PyTree[Float[Array, "..."]],
-    PyTree[Float[Array, "..."]],
-    PyTree[Float[Array, ""]],
-    Float[Array, ""],
-    PyTree[Float[Array, "..."]],
+    PyTree[Float64[Array, "..."]],
+    PyTree[Float64[Array, "..."]],
+    PyTree[Float64[Array, ""]],
+    Float32[Array, ""],
+    PyTree[Float32[Array, "..."]],
 ]:
     # TODO: This loss function probably won't make sense for Nesterov momentum,
     # since it makes no distinction between actual weights and returned weights
@@ -165,17 +166,17 @@ def step_downhill(
 
 @jaxtyped(typechecker=beartype)
 def opt_step_global(
-    opt_params: PyTree[Float[Array, ""]],
-    opt_state: PyTree[Float[Array, "..."]],
+    opt_params: PyTree[Float64[Array, ""]],
+    opt_state: PyTree[Float64[Array, "..."]],
     optim_parameterized: Optimizer,
-    weights: PyTree[Float[Array, "..."]],
-    dLdw: PyTree[Float[Array, "..."]],
-    global_minimum: PyTree[Float[Array, "..."]],
+    weights: PyTree[Float64[Array, "..."]],
+    dLdw: PyTree[Float64[Array, "..."]],
+    global_minimum: PyTree[Float64[Array, "..."]],
 ) -> Tuple[
-    Float[Array, ""],
+    Float32[Array, ""],
     Tuple[
-        PyTree[Float[Array, "..."]],
-        PyTree[Float[Array, "..."]],
+        PyTree[Float64[Array, "..."]],
+        PyTree[Float64[Array, "..."]],
         List[Permutation],
     ],
 ]:
@@ -193,21 +194,21 @@ def opt_step_global(
 @partial(checkify, errors=all_checks)
 @jaxtyped(typechecker=beartype)
 def step_global(
-    weights: PyTree[Float[Array, "..."]],
+    weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
-    inputs: Float[Array, "batch ndim_in"],
-    ground_truth: Float[Array, "batch ndim_out"],
+    inputs: Float32[Array, "batch ndim_in"],
+    ground_truth: Float32[Array, "batch ndim_out"],
     optim_parameterized: Optimizer,
-    opt_params: PyTree[Float[Array, ""]],
-    opt_state: PyTree[Float[Array, "..."]],
-    global_minimum: PyTree[Float[Array, "..."]],
-    power: Float[Array, ""] = jnp.ones([], dtype=jnp.float32),
+    opt_params: PyTree[Float64[Array, ""]],
+    opt_state: PyTree[Float64[Array, "..."]],
+    global_minimum: PyTree[Float64[Array, "..."]],
+    power: Float32[Array, ""] = jnp.ones([], dtype=jnp.float32),
 ) -> Tuple[
-    PyTree[Float[Array, "..."]],
-    PyTree[Float[Array, "..."]],
-    PyTree[Float[Array, ""]],
+    PyTree[Float64[Array, "..."]],
+    PyTree[Float64[Array, "..."]],
+    PyTree[Float64[Array, ""]],
     List[Permutation],
-    Float[Array, ""],
+    Float32[Array, ""],
 ]:
     L, dLdw = loss_and_grad(weights, forward_pass, inputs, ground_truth, power)
     dLdo, (opt_state_adjusted, weights_adjusted, perm) = grad(

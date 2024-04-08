@@ -5,7 +5,7 @@ from beartype.typing import List, Tuple
 from jax import nn as jnn, numpy as jnp, pmap
 from jax.experimental.checkify import check
 from jax.lax import cond
-from jaxtyping import jaxtyped, Array, Bool, Float, PyTree, UInt
+from jaxtyping import jaxtyped, Array, Bool, Float32, PyTree, UInt
 from typing import NamedTuple
 
 
@@ -15,12 +15,12 @@ class Permutation(NamedTuple):
 
     indices: UInt[Array, "n"]
     flip: Bool[Array, "n"]
-    loss: Float[Array, ""]  # TODO: doesn't belong in this data structure
+    loss: Float32[Array, ""]  # TODO: doesn't belong in this data structure
     # TODO: REPLACE `flip` WITH GENERALIZED +/- COEFFICIENTS
 
 
 @jaxtyped(typechecker=beartype)
-def permute(x: Float[Array, "..."], permutation: Permutation, axis: int) -> Array:
+def permute(x, permutation: Permutation, axis: int):
     n = x.shape[axis]
     assert permutation.indices.shape == permutation.flip.shape == (n,)
     # check(
@@ -45,9 +45,9 @@ def permute(x: Float[Array, "..."], permutation: Permutation, axis: int) -> Arra
 
 @jaxtyped(typechecker=beartype)
 def find_permutation_rec(
-    actual: Float[Array, "n ..."],
-    ideal: Float[Array, "n ..."],
-    rowwise: Float[Array, "n n"],
+    actual: Float32[Array, "n ..."],
+    ideal: Float32[Array, "n ..."],
+    rowwise: Float32[Array, "n n"],
     flip: Bool[Array, "n n"],
 ) -> Permutation:
     # Note that, in the last two matrices above,
@@ -109,8 +109,8 @@ def find_permutation_rec(
 
 @jaxtyped(typechecker=beartype)
 def find_permutation(
-    actual: Float[Array, "n m"],
-    ideal: Float[Array, "n m"],
+    actual: Float32[Array, "n m"],
+    ideal: Float32[Array, "n m"],
 ) -> Permutation:
     """
     Exhaustive search for layer-wise permutations minimizing a given loss
@@ -125,7 +125,10 @@ def find_permutation(
 
     # Create a matrix distancing each row from each other row and its negation:
     stack_neg = lambda x: jnp.stack([x, -x], axis=1)[:, jnp.newaxis]
-    rowwise = jnp.abs(ideal[jnp.newaxis, :, jnp.newaxis] - stack_neg(actual))
+    rowwise = jnp.abs(
+        ideal.astype(jnp.float32)[jnp.newaxis, :, jnp.newaxis]
+        - stack_neg(actual.astype(jnp.float32))
+    )
     assert rowwise.shape[:3] == (n, n, 2)
     rowwise = jnp.sum(rowwise.reshape(n, n, 2, -1), axis=-1)
     assert rowwise.shape == (n, n, 2)
@@ -140,10 +143,10 @@ def find_permutation(
 
 @jaxtyped(typechecker=beartype)
 def find_permutation_weights(
-    Wactual: Float[Array, "n_out n_in"],
-    Bactual: Float[Array, "n_out"],
-    Wideal: Float[Array, "n_out n_in"],
-    Bideal: Float[Array, "n_out"],
+    Wactual: Float32[Array, "n_out n_in"],
+    Bactual: Float32[Array, "n_out"],
+    Wideal: Float32[Array, "n_out n_in"],
+    Bideal: Float32[Array, "n_out"],
 ) -> Permutation:
     return find_permutation(
         jnp.concat([Wactual, Bactual[..., jnp.newaxis]], axis=-1),
@@ -155,7 +158,7 @@ def find_permutation_weights(
 def permute_hidden_layers(
     w: Weights,
     ps: List[Permutation],
-) -> PyTree[Float[Array, "..."]]:
+) -> Weights:
     """Permute hidden layers' columns locally without changing the output of a network."""
     n = len(ps)
     assert w.layers() == n + 1
@@ -171,7 +174,7 @@ def permute_hidden_layers(
 def layer_distance(
     actual: Weights,
     ideal: Weights,
-) -> Tuple[Float[Array, ""], List[Permutation]]:
+) -> Tuple[Float32[Array, ""], List[Permutation]]:
     """
     Compute the "true" distance between two sets of weights and biases,
     allowing permutations at every layer without changing the final output.
@@ -189,7 +192,12 @@ def layer_distance(
     n = actual.layers()
     assert ideal.layers() == n, f"{ideal.layers()} =/= {n}"
     ps = [
-        find_permutation_weights(wa, ba, wi, bi)
+        find_permutation_weights(
+            wa.astype(jnp.float32),
+            ba.astype(jnp.float32),
+            wi.astype(jnp.float32),
+            bi.astype(jnp.float32),
+        )
         for wa, ba, wi, bi in zip(
             actual.W[:-1],
             actual.B[:-1],

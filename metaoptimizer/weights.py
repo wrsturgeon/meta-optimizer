@@ -1,13 +1,11 @@
-from beartype import beartype
-from beartype.typing import Callable, Self
-from jaxtyping import jaxtyped, Array, Float
+from beartype.typing import Callable, List, Self
+from jaxtyping import Array, Float64
 from typing import NamedTuple
 
 
-@jaxtyped(typechecker=beartype)
 class Weights(NamedTuple):
-    W: list[Float[Array, "..."]]
-    B: list[Float[Array, "..."]]
+    W: List[Float64[Array, "..."]]
+    B: List[Float64[Array, "..."]]
 
     def layers(self: Self) -> int:
         n = len(self.W)
