@@ -28,7 +28,7 @@ def loss(
     forward_pass: ForwardPass,
     inputs: Float32[Array, "batch ndim_in"],
     ground_truth: Float32[Array, "batch ndim_out"],
-    power: Float32[Array, ""] = jnp.ones([], dtype=jnp.float32),
+    power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
 ) -> Float32[Array, ""]:
     outputs = forward_pass(weights, inputs)
     assert isinstance(outputs, jnp.ndarray), f"`{outputs}` is not a JAX array"
@@ -54,7 +54,7 @@ def step(
     optim_parameterized: Optimizer,
     opt_params: PyTree[Float64[Array, ""]],
     opt_state: PyTree[Float64[Array, "..."]],
-    power: Float32[Array, ""] = jnp.ones([], dtype=jnp.float32),
+    power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
 ) -> Tuple[
     PyTree[Float64[Array, "..."]],
     PyTree[Float64[Array, "..."]],
@@ -77,7 +77,7 @@ def update_and_retest(
     opt_params: PyTree[Float32[Array, ""]],
     opt_state: PyTree[Float32[Array, "..."]],
     last_dLdw: PyTree[Float64[Array, "..."]],
-    power: Float32[Array, ""] = jnp.ones([], dtype=jnp.float32),
+    power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
 ) -> Tuple[
     Float32[Array, ""],
     Tuple[PyTree[Float64[Array, "..."]], PyTree[Float64[Array, "..."]]],
@@ -123,7 +123,7 @@ def step_downhill(
     opt_params: PyTree[Float64[Array, ""]],
     opt_state: PyTree[Float64[Array, "..."]],
     last_dLdw: PyTree[Float64[Array, "..."]],
-    power: Float32[Array, ""] = jnp.ones([], dtype=jnp.float32),
+    power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
 ) -> Tuple[
     PyTree[Float64[Array, "..."]],
     PyTree[Float64[Array, "..."]],
@@ -202,7 +202,7 @@ def step_global(
     opt_params: PyTree[Float64[Array, ""]],
     opt_state: PyTree[Float64[Array, "..."]],
     global_minimum: PyTree[Float64[Array, "..."]],
-    power: Float32[Array, ""] = jnp.ones([], dtype=jnp.float32),
+    power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
 ) -> Tuple[
     PyTree[Float64[Array, "..."]],
     PyTree[Float64[Array, "..."]],

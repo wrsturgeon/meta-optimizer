@@ -594,7 +594,7 @@ def prop_optim_trivial(
         [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
         PyTree[Float[Array, "..."]],
     ],
-    power: Float[Array, ""] = jnp.array(1.0, dtype=jnp.float32),
+    power: Float[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
 ):
     x = jnp.array([[30], [-10]], dtype=jnp.float32)
     opt_state = opt_state_init(x, opt_params)
@@ -662,7 +662,7 @@ def prop_optim(
         [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
         PyTree[Float[Array, "..."]],
     ],
-    power: Float[Array, ""] = jnp.array(1.0, dtype=jnp.float32),
+    power: Float[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
 ):
     w = feedforward.init(
         [NDIM for _ in range(LAYERS + 1)],
@@ -743,7 +743,7 @@ def prop_optim_downhill(
         [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
         PyTree[Float[Array, "..."]],
     ],
-    power: Float[Array, ""] = jnp.array(1.0, dtype=jnp.float32),
+    power: Float[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
 ):
     # print(f"Initl optimizer parameters: {opt_params}")
     orig_opt_params = opt_params
@@ -840,7 +840,7 @@ def prop_optim_global(
         [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
         PyTree[Float[Array, "..."]],
     ],
-    power: Float[Array, ""] = jnp.array(1.0, dtype=jnp.float32),
+    power: Float[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
 ):
     # print(f"Initl optimizer parameters: {opt_params}")
     orig_opt_params = opt_params
