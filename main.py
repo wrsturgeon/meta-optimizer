@@ -24,7 +24,7 @@ NDIM = 3  # Input/output vector dimensionality
 BATCH = 32  # Number of inputs tp propagate in parallel
 LAYERS = 2  # Number of `nl(W @ x + B)` layers in our feedforward model
 NONLINEARITY = jnn.gelu
-POWER = jnp.array(1.0, dtype=jnp.float32)  # e.g. 1 for L1 loss, 2 for L2, etc.
+POWER = jnp.array(2.0, dtype=jnp.float32)  # e.g. 1 for L1 loss, 2 for L2, etc.
 # TODO: make `POWER` learnable
 LR = jnp.array(0.001, dtype=jnp.float64)
 EPOCHS = 20000
