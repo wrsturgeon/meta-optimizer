@@ -4,6 +4,7 @@ import os
 
 
 DPI = 256
+LINE_WIDTH = DPI / 256.0
 
 
 def run(directory: str = os.path.join(os.getcwd(), "logs")) -> None:
@@ -28,7 +29,7 @@ def run(directory: str = os.path.join(os.getcwd(), "logs")) -> None:
         historical_max = np.max([np.max(f) for f in historical_loaded])
         historical_range = historical_max - historical_min
     for fname, arr in zip(historical_files, historical_loaded):
-        plt.plot(arr)
+        plt.plot(arr, linewidth=LINE_WIDTH)
         plt.ylim(
             historical_min - 0.1 * historical_range,
             historical_max + 0.1 * historical_range,
@@ -54,7 +55,7 @@ def run(directory: str = os.path.join(os.getcwd(), "logs")) -> None:
         elif os.path.isfile(f):
             without_ext, ext = os.path.splitext(fname)
             if ext == ".npy":
-                plt.plot(np.load(f))
+                plt.plot(np.load(f), linewidth=LINE_WIDTH)
                 # plt.gca().set_ylim([0.0, 1.0])
                 plt.ticklabel_format(style="plain", useOffset=False)
                 os.makedirs(os.path.join(directory, "plots"), exist_ok=True)

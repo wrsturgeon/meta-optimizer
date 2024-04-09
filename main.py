@@ -27,10 +27,10 @@ NONLINEARITY = jnn.gelu
 POWER = jnp.array(2.0, dtype=jnp.float32)  # e.g. 1 for L1 loss, 2 for L2, etc.
 # TODO: make `POWER` learnable
 LR = jnp.array(0.001, dtype=jnp.float64)
-EPOCHS = 20000
+EPOCHS = 1000000
 from metaoptimizer.optimizers import (
-    # swiss_army_knife as optim
-    sgd as optim,
+    swiss_army_knife as optim,
+    # sgd as optim,
 )
 
 # Weight initialization (note `w_ideal` is really the *goal*)
@@ -45,14 +45,11 @@ w_ideal = feedforward.init(
     random_biases=True,
 )
 
-# # Uncomment if you want `w` to start already very close to `w_ideal`:
-# std_distance = 0.001
-# w_flat, w_def = tree_flatten(w)
-# w_keys = tree_unflatten(w_def, jrnd.split(jrnd.PRNGKey(42), len(w_flat)))
-# w = tree_map(lambda x, k: x + std_distance * jrnd.normal(k, x.shape), w_ideal, w_keys)
-
-# Fuck it, there is NO WAY this can fail
-w = w_ideal
+# Uncomment if you want `w` to start already very close to `w_ideal`:
+std_distance = 1.0
+w_flat, w_def = tree_flatten(w)
+w_keys = tree_unflatten(w_def, jrnd.split(jrnd.PRNGKey(42), len(w_flat)))
+w = tree_map(lambda x, k: x + std_distance * jrnd.normal(k, x.shape), w_ideal, w_keys)
 
 # Optimizer initialization
 # TODO: Is there a Pythonic way to reduce redundancy here?

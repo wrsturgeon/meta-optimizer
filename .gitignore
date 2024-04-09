@@ -14,4 +14,4 @@
 
 # Logs
 /logs/
-/logs/**
+/saved-logs/
