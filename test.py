@@ -398,8 +398,8 @@ def test_better_than_random_permutation_frozen_1():
     # First, test that we're normalizing the right axes:
     x = jnp.array([[1, 1], [-1, 0]], dtype=jnp.float32)
     x_std = jnp.sqrt(jnp.sum(jnp.square(x), axis=1, keepdims=True)) + 1e-8
-    x = x / x_std
-    sqrt_half = 1.0 / jnp.sqrt(2.0)
+    x = x / (x_std + 1e-8)
+    sqrt_half = jnp.sqrt(0.5)
     normalized = jnp.array([[sqrt_half, sqrt_half], [-1, 0]])
     # If we normalized the wrong axis, it'd be [[sqrt_half 1] [-sqrt_half 0]]
     prop_better_than_random_permutation(

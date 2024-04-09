@@ -53,7 +53,7 @@ def update(
     persistent_sq = tree_map(lambda w: moving_square_decay * w, s.moving_square)
     novel_sq = tree_map(lambda w: (1.0 - moving_square_decay) * w, squared)
     moving_sq = tree_map(operator.add, persistent_sq, novel_sq)
-    rms = tree_map(jnp.sqrt, moving_sq)
+    rms = tree_map(lambda x: jnp.sqrt(x + epsilon), moving_sq)
     update = tree_map(lambda di, ri: lr * di / (ri + epsilon), dLdw, rms)
     updated = tree_map(operator.sub, w, update)
     return State(moving_square=moving_sq), updated

@@ -71,7 +71,7 @@ def update(
     novel_sq = tree_map(lambda w: (1.0 - moving_square_decay) * w, squared)
     raw_moving_sq = tree_map(operator.add, persistent_sq, novel_sq)
     moving_sq = tree_map(lambda wi: wi / (1.0 - s.correction_square), raw_moving_sq)
-    rms = tree_map(jnp.sqrt, moving_sq)
+    rms = tree_map(lambda x: jnp.sqrt(x + epsilon), moving_sq)
     update = tree_map(lambda mi, vi: lr * mi / (vi + epsilon), moving_avg, rms)
     updated = tree_map(operator.sub, w, update)
     return (

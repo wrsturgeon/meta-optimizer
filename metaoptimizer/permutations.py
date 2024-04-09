@@ -120,8 +120,8 @@ def find_permutation(
     n, _ = actual.shape
     actual_std = jnp.sqrt(jnp.sum(jnp.square(actual), axis=1, keepdims=True)) + 1e-8
     ideal_std = jnp.sqrt(jnp.sum(jnp.square(ideal), axis=1, keepdims=True)) + 1e-8
-    actual = actual / actual_std
-    ideal = ideal / ideal_std
+    actual = actual / (actual_std + 1e-8)
+    ideal = ideal / (ideal_std + 1e-8)
 
     # Create a matrix distancing each row from each other row and its negation:
     stack_neg = lambda x: jnp.stack([x, -x], axis=1)[:, jnp.newaxis]

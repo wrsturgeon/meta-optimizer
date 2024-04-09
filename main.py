@@ -21,13 +21,13 @@ print("Setting up the model architecture...")
 
 # Hyper-hyperparameters?
 NDIM = 3  # Input/output vector dimensionality
-BATCH = 32  # Number of inputs tp propagate in parallel
+BATCH = 1  # Number of inputs tp propagate in parallel
 LAYERS = 2  # Number of `nl(W @ x + B)` layers in our feedforward model
 NONLINEARITY = jnn.gelu
 POWER = jnp.array(2.0, dtype=jnp.float32)  # e.g. 1 for L1 loss, 2 for L2, etc.
 # TODO: make `POWER` learnable
 LR = jnp.array(0.001, dtype=jnp.float64)
-EPOCHS = 1000000
+EPOCHS = 10000
 from metaoptimizer.optimizers import (
     swiss_army_knife as optim,
     # sgd as optim,
@@ -222,6 +222,13 @@ if hasattr(opt_params_hist[0], "inv_sig_moving_square_decay"):
     np.save(
         path("logs", "optimizer", "moving_square_decay.npy"),
         np.array([jnn.sigmoid(p.inv_sig_moving_square_decay) for p in opt_params_hist]),
+    )
+if hasattr(opt_params_hist[0], "inv_sig_moving_square_quotient"):
+    np.save(
+        path("logs", "optimizer", "moving_square_quotient.npy"),
+        np.array(
+            [jnn.sigmoid(p.inv_sig_moving_square_quotient) for p in opt_params_hist]
+        ),
     )
 if hasattr(opt_params_hist[0], "inv_sig_momentum"):
     np.save(
