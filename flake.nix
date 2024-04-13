@@ -70,6 +70,9 @@
           plot = ''
             ${python-with [ default-pkgs ]} $out/plot.py
           '';
+          plot-convergence = ''
+            ${python-with [ default-pkgs ]} $out/plot-convergence.py
+          '';
         };
       in
       {
@@ -112,18 +115,6 @@
                   )
                 )}
               '';
-            # checkPhase =
-            #   let
-            #     python = python-with [
-            #       default-pkgs
-            #       check-pkgs
-            #     ];
-            #   in
-            #   ''
-            #     cd $out
-            #     ${python} -m pytest -Werror test.py
-            #   '';
-            # doCheck = true;
           };
         };
         devShells.default = pkgs.mkShell {

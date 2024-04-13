@@ -3,6 +3,7 @@ from matplotlib import pyplot as plt
 from jaxtyping import jaxtyped
 import numpy as np
 import os
+from shutil import rmtree
 
 
 DPI = 256
@@ -10,11 +11,10 @@ LINE_WIDTH = DPI / 256.0
 
 
 @jaxtyped(typechecker=beartype)
-def run(directory: str = os.path.join(os.getcwd(), "logs")) -> None:
-    assert os.path.exists(
-        directory
-    ), f"Directory `{directory}` does not exist. Try running the training loop first."
-    assert os.path.isdir(directory), f"File `{directory}` is not a directory"
+def run(directory: str = os.path.join(os.getcwd(), "convergence-rates")) -> None:
+    if os.path.exists(directory):
+        rmtree(directory)
+    os.makedirs(directory)
 
     plt.close("all")
 

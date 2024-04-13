@@ -26,8 +26,8 @@ LAYERS = 2  # Number of `nl(W @ x + B)` layers in our feedforward model
 NONLINEARITY = jnn.gelu
 POWER = jnp.array(2.0, dtype=jnp.float32)  # e.g. 1 for L1 loss, 2 for L2, etc.
 # TODO: make `POWER` learnable
-LR = jnp.array(0.001, dtype=jnp.float64)
-EPOCHS = 10000
+LR = jnp.array(0.01, dtype=jnp.float64)
+EPOCHS = 100000
 from metaoptimizer.optimizers import (
     swiss_army_knife as optim,
     # sgd as optim,
@@ -46,7 +46,7 @@ w_ideal = feedforward.init(
 )
 
 # Uncomment if you want `w` to start already very close to `w_ideal`:
-std_distance = 1.0
+std_distance = 0.1
 w_flat, w_def = tree_flatten(w)
 w_keys = tree_unflatten(w_def, jrnd.split(jrnd.PRNGKey(42), len(w_flat)))
 w = tree_map(lambda x, k: x + std_distance * jrnd.normal(k, x.shape), w_ideal, w_keys)

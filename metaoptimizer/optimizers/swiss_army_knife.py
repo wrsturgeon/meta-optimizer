@@ -34,8 +34,8 @@ class State(NamedTuple):
 @jaxtyped(typechecker=beartype)
 def defaults(
     lr: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
-    moving_average_decay: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
-    moving_square_decay: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
+    moving_average_decay: Float64[Array, ""] = jnp.array(0.9, dtype=jnp.float64),
+    moving_square_decay: Float64[Array, ""] = jnp.array(0.999, dtype=jnp.float64),
     moving_square_quotient: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
     momentum: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
     overstep: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
