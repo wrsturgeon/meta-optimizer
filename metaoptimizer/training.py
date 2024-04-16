@@ -478,6 +478,7 @@ else:
             Float32[Array, ""],
         ],
     ]:
+        print("RUNNING `jit_step_global` FOR THE FIRST TIME")
         return checkify(raw_step_global, errors=all_checks)(
             weights,
             forward_pass,

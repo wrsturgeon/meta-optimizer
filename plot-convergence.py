@@ -31,111 +31,10 @@ from metaoptimizer.optimizers import (
 )
 
 
-if os.getenv("NONJIT") == "1":
-
-    def run(
-        key: Array,
-        ndim: Static[int] = 3,
-        batch: Static[int] = 1,
-        layers: Static[int] = 2,
-        nonlinearity: Static[
-            Callable[[Float32[Array, "*n"]], Float32[Array, "*n"]]
-        ] = jnn.gelu,
-        optim: Static[ModuleType] = import_module("metaoptimizer.optimizers.sgd"),
-        training_steps: Static[int] = 100000,
-        subdir: Static[List[str]] = [],
-        convergence_only: Static[bool] = False,
-        power: Float32[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
-        lr: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
-        initial_distance: Float64[Array, ""] = jnp.array(0.1, dtype=jnp.float64),
-    ) -> None:
-        return trial.run(
-            key,
-            ndim,
-            batch,
-            layers,
-            nonlinearity,
-            optim,
-            training_steps,
-            list(subdir),
-            convergence_only,
-            power,
-            lr,
-            initial_distance,
-        )
-
-else:
-
-    @jit
-    def jit_run(
-        key: Array,
-        ndim: Static[int] = 3,
-        batch: Static[int] = 1,
-        layers: Static[int] = 2,
-        nonlinearity: Static[
-            Callable[[Float32[Array, "*n"]], Float32[Array, "*n"]]
-        ] = jnn.gelu,
-        optim: Static[ModuleType] = import_module("metaoptimizer.optimizers.sgd"),
-        training_steps: Static[int] = 100000,
-        subdir: Static[Tuple] = (),
-        convergence_only: Static[bool] = False,
-        power: Float32[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
-        lr: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
-        initial_distance: Float64[Array, ""] = jnp.array(0.1, dtype=jnp.float64),
-    ) -> Tuple[Error, None]:
-        return checkify(trial.run, errors=all_checks)(
-            key,
-            ndim,
-            batch,
-            layers,
-            nonlinearity,
-            optim,
-            training_steps,
-            list(subdir),
-            convergence_only,
-            power,
-            lr,
-            initial_distance,
-        )
-
-    def run(
-        key: Array,
-        ndim: Static[int] = 3,
-        batch: Static[int] = 1,
-        layers: Static[int] = 2,
-        nonlinearity: Static[
-            Callable[[Float32[Array, "*n"]], Float32[Array, "*n"]]
-        ] = jnn.gelu,
-        optim: Static[ModuleType] = import_module("metaoptimizer.optimizers.sgd"),
-        training_steps: Static[int] = 100000,
-        subdir: Static[List[str]] = [],
-        convergence_only: Static[bool] = False,
-        power: Float32[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
-        lr: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
-        initial_distance: Float64[Array, ""] = jnp.array(0.1, dtype=jnp.float64),
-    ) -> None:
-        err, y = jit_run(
-            key,
-            ndim,
-            batch,
-            layers,
-            nonlinearity,
-            optim,
-            training_steps,
-            tuple(subdir),
-            convergence_only,
-            power,
-            lr,
-            initial_distance,
-        )
-        err.throw()
-        return y
-
-
 if __name__ == "__main__":
 
     print("And so it begins...")
-    for layers in range(1, 4):
+    for layers in range(2, 4):
         print(f"  {layers} layer" + ("" if layers == 0 else "s"))
         layer_dir = [*DIRECTORY, f"{layers}-layer"]
         for lg_ndim in range(4):
@@ -158,7 +57,7 @@ if __name__ == "__main__":
                             print(f"            trial #{i}")
                             trial_dir = [*batch_dir, f"trial-{i}"]
 
-                            run(
+                            trial.run(
                                 jrnd.PRNGKey(i),
                                 ndim,
                                 batch,
@@ -171,6 +70,7 @@ if __name__ == "__main__":
                                 POWER,
                                 lr,
                                 dist,
+                                prefix="              ",
                             )
 
     import plot  # Relative import: `plot.py`

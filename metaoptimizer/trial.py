@@ -8,11 +8,11 @@ from beartype.typing import Callable, List, Tuple
 from functools import partial
 from importlib import import_module
 from jax import nn as jnn, numpy as jnp, random as jrnd
+from jax.experimental import io_callback
 from jax.tree_util import tree_flatten, tree_map, tree_unflatten
 from jax_dataclasses import Static
 from jaxtyping import jaxtyped, Array, Float32, Float64, PyTree
 import matplotlib.pyplot as plt
-import numpy as np
 import operator
 import os
 import shutil
@@ -123,6 +123,7 @@ else:
             Float32[Array, ""],
         ],
     ]:
+        print("RUNNING `jit_step` FOR THE FIRST TIME")
         return checkify(raw_step, errors=all_checks)(
             batch,
             ndim,
@@ -178,18 +179,22 @@ def run(
     batch: Static[int] = 1,
     layers: Static[int] = 2,
     nonlinearity: Static[
-        Callable[[Float32[Array, "*n"]], Float32[Array, "*n"]]
+        Callable[
+            [Float32[Array, "*n"]],
+            Float32[Array, "*n"],
+        ]
     ] = jnn.gelu,
     optim: Static[ModuleType] = import_module("metaoptimizer.optimizers.sgd"),
     training_steps: Static[int] = 100000,
-    subdir: Static[List[str]] = [],
+    subdir: Static[List[str]] = ["logs"],
     convergence_only: Static[bool] = False,
     power: Float32[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
     lr: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
     initial_distance: Float64[Array, ""] = jnp.array(0.1, dtype=jnp.float64),
+    prefix: str = "",
 ) -> None:
 
-    print("Setting up the model architecture...")
+    print(prefix + "Setting up the model architecture...")
 
     k1, k2 = jrnd.split(key)
 
@@ -216,29 +221,27 @@ def run(
     # Replicable pseudorandomness
     key = jrnd.PRNGKey(42)  # the answer
 
-    # Network configuration (right now, just choosing the nonlinearity)
-    forward_pass = partial(feedforward.run, nl=nonlinearity)
-
     # Record-keeping
     weight_distances = [
-        np.empty([training_steps], dtype=np.float32) for _ in range(layers)
+        [jnp.empty([], dtype=jnp.float32) for _ in range(training_steps)]
+        for _ in range(layers)
     ]
+    nonterminal_layers = layers - 1
     if not convergence_only:
-        nonterminal_layers = layers - 1
-        losses = np.empty([training_steps], dtype=np.float32)
+        losses = jnp.empty([training_steps], dtype=jnp.float32)
         permutation_indices = [
-            np.empty([training_steps, ndim], dtype=np.uint32)
+            jnp.empty([training_steps, ndim], dtype=jnp.uint32)
             for _ in range(nonterminal_layers)
         ]
         permutation_flips = [
-            np.empty([training_steps, ndim], dtype=bool)
+            jnp.empty([training_steps, ndim], dtype=bool)
             for _ in range(nonterminal_layers)
         ]
         opt_params_hist: List[PyTree[Float64[Array, ""]]] = []
         w_hist: List[PyTree[Float64[Array, "..."]]] = []
         w_ideal_hist: List[PyTree[Float64[Array, "..."]]] = []
 
-    print("Compiling the training loop...")
+    print(prefix + "Compiling the training loop...")
 
     # Training loop:
     t0 = time()
@@ -249,7 +252,7 @@ def run(
             key, w, opt_state, opt_params, permutation, L = step(
                 batch,
                 ndim,
-                forward_pass,
+                partial(feedforward.run, nl=nonlinearity),
                 optimizer,
                 w_ideal,
                 opt_state,
@@ -260,17 +263,17 @@ def run(
             )
 
             for j in range(layers):
-                dist = np.array(
+                dist = jnp.array(
                     jnp.sum(jnp.abs(w.W[j] - w_ideal.B[j]))
                     + jnp.sum(jnp.abs(w.B[j] - w_ideal.B[j]))
                 )
                 weight_distances[j][i] = dist
 
             if not convergence_only:
-                losses[i] = np.array(L)
+                losses[i] = jnp.array(L)
                 for j in range(nonterminal_layers):
-                    permutation_indices[j][i] = np.array(permutation[j].indices)
-                    permutation_flips[j][i] = np.array(permutation[j].flip)
+                    permutation_indices[j][i] = jnp.array(permutation[j].indices)
+                    permutation_flips[j][i] = jnp.array(permutation[j].flip)
                 opt_params_hist.append(opt_params)
                 w_hist.append(tree_map(jnp.ravel, w))
                 w_ideal_hist.append(
@@ -280,131 +283,202 @@ def run(
                     )
                 )
 
-        print(f"{percent + 1}%")
+        print(prefix + f"{percent + 1}%")
 
-    print(f"Done in {int(time() - t0)} seconds")
-    print("Saving...")
+    print(prefix + f"Done in {int(time() - t0)} seconds")
+    print(prefix + "Saving...")
 
     w_ideal_permuted = permutations.permute_hidden_layers(w_ideal, permutation)
 
     cwd = os.getcwd()
     cwd = os.path.join(cwd, *subdir)
     path = lambda *args: os.path.join(cwd, *args)
-    if os.path.exists(path("logs")):
-        shutil.rmtree(path("logs"), ignore_errors=True)
-    os.makedirs(path("logs", "optimizer"))
-    os.makedirs(path("logs", "permutations"))
-    os.makedirs(path("logs", "weights"))
-    os.makedirs(path("logs", "weight_distances"))
-    np.save(path("logs", "losses.npy"), losses, allow_pickle=False)
+
+    @jaxtyped(typechecker=beartype)
+    def save(array: Array, *args) -> None:
+        io_callback(
+            lambda x: jnp.save(
+                path(*args),
+                x,
+                allow_pickle=False,
+            ),
+            None,
+            array,
+        )
+
+    if os.path.exists(path()):
+        shutil.rmtree(path(), ignore_errors=True)
+    os.makedirs(path("weight_distances"))
+    if not convergence_only:
+        save(losses, "losses.npy")
+        os.makedirs(path("optimizer"))
+        os.makedirs(path("permutations"))
+        os.makedirs(path("weights"))
     for i in range(layers):
-        os.makedirs(path("logs", "weights", f"layer_{i}", "weights"))
-        os.makedirs(path("logs", "weights", f"layer_{i}", "biases"))
-        np.save(
-            path("logs", "weights", f"layer_{i}", "weights", "w_historical.npy"),
-            np.array([jnp.ravel(wh.W[i]) for wh in w_hist]),
+
+        save(
+            jnp.array(weight_distances[i]),
+            "weight_distances",
+            f"layer_{i}.npy",
         )
-        np.save(
-            path("logs", "weights", f"layer_{i}", "biases", "w_historical.npy"),
-            np.array([jnp.ravel(wh.B[i]) for wh in w_hist]),
-        )
-        np.save(
-            path("logs", "weights", f"layer_{i}", "weights", "w_ideal_historical.npy"),
-            np.array([jnp.ravel(wh.W[i]) for wh in w_ideal_hist]),
-        )
-        np.save(
-            path("logs", "weights", f"layer_{i}", "biases", "w_ideal_historical.npy"),
-            np.array([jnp.ravel(wh.B[i]) for wh in w_ideal_hist]),
-        )
-        np.save(
-            path("logs", "weight_distances", f"layer_{i}.npy"),
-            weight_distances[i],
-            allow_pickle=False,
-        )
-        np.save(
-            path("logs", "weights", f"layer_{i}", "weights", "ideal_orig.npy"),
-            w_ideal.W[i],
-            allow_pickle=False,
-        )
-        np.save(
-            path("logs", "weights", f"layer_{i}", "weights", "ideal_perm.npy"),
-            w_ideal_permuted.W[i],
-            allow_pickle=False,
-        )
-        np.save(
-            path("logs", "weights", f"layer_{i}", "weights", "final.npy"),
-            w.W[i],
-            allow_pickle=False,
-        )
-        np.save(
-            path("logs", "weights", f"layer_{i}", "biases", "ideal_orig.npy"),
-            w_ideal.B[i],
-            allow_pickle=False,
-        )
-        np.save(
-            path("logs", "weights", f"layer_{i}", "biases", "ideal_perm.npy"),
-            w_ideal_permuted.B[i],
-            allow_pickle=False,
-        )
-        np.save(
-            path("logs", "weights", f"layer_{i}", "biases", "final.npy"),
-            w.B[i],
-            allow_pickle=False,
-        )
-    for i in range(nonterminal_layers):
-        np.save(
-            path("logs", "permutations", f"layer_{i}_indices.npy"),
-            permutation_indices[i],
-            allow_pickle=False,
-        )
-        np.save(
-            path("logs", "permutations", f"layer_{i}_flips.npy"),
-            permutation_flips[i],
-            allow_pickle=False,
-        )
-    if hasattr(opt_params_hist[0], "log_lr"):
-        np.save(
-            path("logs", "optimizer", "lr.npy"),
-            np.array([jnp.exp(p.log_lr) for p in opt_params_hist]),
-        )
-    if hasattr(opt_params_hist[0], "inv_sig_moving_average_decay"):
-        np.save(
-            path("logs", "optimizer", "moving_average_decay.npy"),
-            np.array(
-                [jnn.sigmoid(p.inv_sig_moving_average_decay) for p in opt_params_hist]
-            ),
-        )
-    if hasattr(opt_params_hist[0], "inv_sig_moving_square_decay"):
-        np.save(
-            path("logs", "optimizer", "moving_square_decay.npy"),
-            np.array(
-                [jnn.sigmoid(p.inv_sig_moving_square_decay) for p in opt_params_hist]
-            ),
-        )
-    if hasattr(opt_params_hist[0], "inv_sig_moving_square_quotient"):
-        np.save(
-            path("logs", "optimizer", "moving_square_quotient.npy"),
-            np.array(
-                [jnn.sigmoid(p.inv_sig_moving_square_quotient) for p in opt_params_hist]
-            ),
-        )
-    if hasattr(opt_params_hist[0], "inv_sig_momentum"):
-        np.save(
-            path("logs", "optimizer", "momentum.npy"),
-            np.array([jnn.sigmoid(p.inv_sig_momentum) for p in opt_params_hist]),
-        )
-    if hasattr(opt_params_hist[0], "log_overstep"):
-        np.save(
-            path("logs", "optimizer", "overstep.npy"),
-            np.array([jnp.exp(p.log_overstep) for p in opt_params_hist]),
-        )
-    if hasattr(opt_params_hist[0], "inv_sig_weight_decay"):
-        np.save(
-            path("logs", "optimizer", "weight_decay.npy"),
-            np.array([jnn.sigmoid(p.inv_sig_weight_decay) for p in opt_params_hist]),
-        )
-    if hasattr(opt_params_hist[0], "log_epsilon"):
-        np.save(
-            path("logs", "optimizer", "epsilon.npy"),
-            np.array([jnp.exp(p.log_epsilon) for p in opt_params_hist]),
-        )
+
+        if convergence_only:
+            save(
+                jnp.less(
+                    jnp.sum(jnp.array(weight_distances[-1])),
+                    jnp.sum(jnp.array(weight_distances[0])),
+                ),
+                "closer_or_not.npy",
+            )
+
+        else:
+            os.makedirs(path("weights", f"layer_{i}", "weights"))
+            os.makedirs(path("weights", f"layer_{i}", "biases"))
+            save(
+                jnp.array([jnp.ravel(wh.W[i]) for wh in w_hist]),
+                "weights",
+                f"layer_{i}",
+                "weights",
+                "w_historical.npy",
+            )
+            save(
+                jnp.array([jnp.ravel(wh.B[i]) for wh in w_hist]),
+                "weights",
+                f"layer_{i}",
+                "biases",
+                "w_historical.npy",
+            )
+            save(
+                jnp.array([jnp.ravel(wh.W[i]) for wh in w_ideal_hist]),
+                "weights",
+                f"layer_{i}",
+                "weights",
+                "w_ideal_historical.npy",
+            )
+            save(
+                jnp.array([jnp.ravel(wh.B[i]) for wh in w_ideal_hist]),
+                "weights",
+                f"layer_{i}",
+                "biases",
+                "w_ideal_historical.npy",
+            )
+            save(
+                w_ideal.W[i],
+                "weights",
+                f"layer_{i}",
+                "weights",
+                "ideal_orig.npy",
+            )
+            save(
+                w_ideal_permuted.W[i],
+                "weights",
+                f"layer_{i}",
+                "weights",
+                "ideal_perm.npy",
+            )
+            save(
+                w.W[i],
+                "weights",
+                f"layer_{i}",
+                "weights",
+                "final.npy",
+            )
+            save(
+                w_ideal.B[i],
+                "weights",
+                f"layer_{i}",
+                "biases",
+                "ideal_orig.npy",
+            )
+            save(
+                w_ideal_permuted.B[i],
+                "weights",
+                f"layer_{i}",
+                "biases",
+                "ideal_perm.npy",
+            )
+            save(
+                w.B[i],
+                "weights",
+                f"layer_{i}",
+                "biases",
+                "final.npy",
+            )
+
+    if not convergence_only:
+        for i in range(nonterminal_layers):
+            save(
+                permutation_indices[i],
+                "permutations",
+                f"layer_{i}_indices.npy",
+            )
+            save(
+                permutation_flips[i],
+                "permutations",
+                f"layer_{i}_flips.npy",
+            )
+        if hasattr(opt_params_hist[0], "log_lr"):
+            save(
+                jnp.array([jnp.exp(p.log_lr) for p in opt_params_hist]),
+                "optimizer",
+                "lr.npy",
+            )
+        if hasattr(opt_params_hist[0], "inv_sig_moving_average_decay"):
+            save(
+                jnp.array(
+                    [
+                        jnn.sigmoid(p.inv_sig_moving_average_decay)
+                        for p in opt_params_hist
+                    ]
+                ),
+                "optimizer",
+                "moving_average_decay.npy",
+            )
+        if hasattr(opt_params_hist[0], "inv_sig_moving_square_decay"):
+            save(
+                jnp.array(
+                    [
+                        jnn.sigmoid(p.inv_sig_moving_square_decay)
+                        for p in opt_params_hist
+                    ]
+                ),
+                "optimizer",
+                "moving_square_decay.npy",
+            )
+        if hasattr(opt_params_hist[0], "inv_sig_moving_square_quotient"):
+            save(
+                jnp.array(
+                    [
+                        jnn.sigmoid(p.inv_sig_moving_square_quotient)
+                        for p in opt_params_hist
+                    ]
+                ),
+                "optimizer",
+                "moving_square_quotient.npy",
+            )
+        if hasattr(opt_params_hist[0], "inv_sig_momentum"):
+            save(
+                jnp.array([jnn.sigmoid(p.inv_sig_momentum) for p in opt_params_hist]),
+                "optimizer",
+                "momentum.npy",
+            )
+        if hasattr(opt_params_hist[0], "log_overstep"):
+            save(
+                jnp.array([jnp.exp(p.log_overstep) for p in opt_params_hist]),
+                "optimizer",
+                "overstep.npy",
+            )
+        if hasattr(opt_params_hist[0], "inv_sig_weight_decay"):
+            save(
+                jnp.array(
+                    [jnn.sigmoid(p.inv_sig_weight_decay) for p in opt_params_hist]
+                ),
+                "optimizer",
+                "weight_decay.npy",
+            )
+        if hasattr(opt_params_hist[0], "log_epsilon"):
+            save(
+                jnp.array([jnp.exp(p.log_epsilon) for p in opt_params_hist]),
+                "optimizer",
+                "epsilon.npy",
+            )
