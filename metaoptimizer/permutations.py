@@ -5,7 +5,9 @@ from beartype.typing import List, Tuple
 from jax import nn as jnn, numpy as jnp, pmap
 from jax.experimental.checkify import check
 from jax.lax import cond
+from jax.tree_util import tree_map, tree_reduce
 from jaxtyping import jaxtyped, Array, Bool, Float32, PyTree, UInt
+import operator
 from typing import NamedTuple
 
 
@@ -206,4 +208,8 @@ def layer_distance(
             # Why [:-1]? Cuz we can't change output rows' meaning by permuting them
         )
     ]
-    return sum([p.loss for p in ps]), ps
+    s = tree_reduce(
+        operator.add, (jnp.array(0, dtype=jnp.float32), tree_map(lambda p: p.loss, ps))
+    )
+    assert jnp.issubdtype(s.dtype, jnp.float32)
+    return s, ps

@@ -1,21 +1,32 @@
 from metaoptimizer.weights import Weights
 
 from beartype import beartype
-from beartype.typing import Callable
+from beartype.typing import Callable, Tuple
+from functools import partial
 from jax import nn as jnn, numpy as jnp, random as jrnd
 from jax.experimental.checkify import check
 from jax.numpy import linalg as jla
+from jax_dataclasses import Static
 from jaxtyping import jaxtyped, Array, Float32, PyTree, UInt
+import os
+
+
+if os.getenv("NONJIT") == "1":
+    print("NOTE: `NONJIT` activated")
+else:
+    from jax.experimental.checkify import all_checks, checkify, Error
+    from jax_dataclasses import jit
+
 
 KeyArray = UInt[Array, "n_keys"]  # <https://github.com/google/jax/issues/12706>
 
 
 # TODO: What is wrong with the typechecker and `Weights` here?!?
-# @jaxtyped(typechecker=beartype)
-def run(
+@jaxtyped(typechecker=beartype)
+def raw_run(
     w: Weights,
     x: Float32[Array, "batch n_in"],
-    nl: Callable[[Float32[Array, "..."]], Float32[Array, "..."]] = jnn.gelu,
+    nl: Static[Callable[[Float32[Array, "..."]], Float32[Array, "..."]]] = jnn.gelu,
 ) -> Float32[Array, "batch n_out"]:
     batch, ndim_in = x.shape
     x = x[..., jnp.newaxis]
@@ -33,6 +44,9 @@ def run(
     for i in range(n):
         assert w.W[i].ndim == 2
         assert w.B[i].ndim == 1
+        assert w.W[i].shape[1] == x.shape[1]
+        assert w.B[i].shape == (w.W[i].shape[0],)
+        assert x.shape == (batch, w.W[i].shape[1], 1)
         y = nl(
             w.W[i].astype(jnp.float32) @ x
             + w.B[i].astype(jnp.float32)[jnp.newaxis, :, jnp.newaxis]
@@ -62,6 +76,35 @@ def run(
     assert x.ndim == 3
     assert x.shape[-1] == 1
     return x[..., 0]
+
+
+if os.getenv("NONJIT") == "1":
+
+    def run(
+        w: Weights,
+        x: Float32[Array, "batch n_in"],
+        nl: Static[Callable[[Float32[Array, "..."]], Float32[Array, "..."]]] = jnn.gelu,
+    ) -> Float32[Array, "batch n_out"]:
+        return raw_run(w, x, nl)
+
+else:
+
+    @jit
+    def jit_run(
+        w: Weights,
+        x: Float32[Array, "batch n_in"],
+        nl: Static[Callable[[Float32[Array, "..."]], Float32[Array, "..."]]] = jnn.gelu,
+    ) -> Tuple[Error, Float32[Array, "batch n_out"]]:
+        return checkify(raw_run, errors=all_checks)(w, x, nl)
+
+    def run(
+        w: Weights,
+        x: Float32[Array, "batch n_in"],
+        nl: Static[Callable[[Float32[Array, "..."]], Float32[Array, "..."]]] = jnn.gelu,
+    ) -> Float32[Array, "batch n_out"]:
+        err, y = jit_run(w, x, nl)
+        err.throw()
+        return y
 
 
 @jaxtyped(typechecker=beartype)

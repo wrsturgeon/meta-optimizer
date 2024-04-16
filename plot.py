@@ -10,10 +10,10 @@ LINE_WIDTH = DPI / 256.0
 
 
 @jaxtyped(typechecker=beartype)
-def run(directory: str = os.path.join(os.getcwd(), "logs")) -> None:
-    assert os.path.exists(
-        directory
-    ), f"Directory `{directory}` does not exist. Try running the training loop first."
+def run(directory: str) -> None:
+
+    if not os.path.exists(directory):
+        return
     assert os.path.isdir(directory), f"File `{directory}` is not a directory"
 
     plt.close("all")
@@ -78,4 +78,5 @@ def run(directory: str = os.path.join(os.getcwd(), "logs")) -> None:
 
 
 if __name__ == "__main__":
-    run()
+    run(os.path.join(os.getcwd(), "logs"))
+    run(os.path.join(os.getcwd(), "convergence-rates"))

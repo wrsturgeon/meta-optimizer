@@ -2,11 +2,16 @@
   description = "Quantifying performance of machine-learning optimizers like RMSProp & Adam.";
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
+    jax-dataclasses-src = {
+      flake = false;
+      url = "github:brentyi/jax_dataclasses";
+    };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   };
   outputs =
     {
       flake-utils,
+      jax-dataclasses-src,
       nixpkgs,
       self,
     }:
@@ -18,9 +23,17 @@
         src = ./.;
         pkgs = import nixpkgs { inherit system; };
         pypkgs = pkgs.python311Packages;
+        pythonize-name = nixpkgs.lib.strings.stringAsChars (c: if c == "-" then "_" else c);
         # TODO: Use pylyzer when 1.76.0+ supported
         default-pkgs =
-          p: with p; [
+          p:
+          with p;
+          [
+            beartype
+            jaxtyping
+            matplotlib
+          ]
+          ++ [
             (jax.overridePythonAttrs (
               old:
               old
@@ -29,9 +42,21 @@
                 propagatedBuildInputs = old.propagatedBuildInputs ++ [ p.jaxlib-bin ];
               }
             ))
-            beartype
-            jaxtyping
-            matplotlib
+            (
+              let
+                pname = "jax_dataclasses";
+                path = "$out/lib/${pypkgs.python.libPrefix}/site-packages";
+              in
+              pkgs.stdenv.mkDerivation {
+                inherit pname;
+                version = "main";
+                src = jax-dataclasses-src;
+                installPhase = ''
+                  mkdir -p ${path}
+                  mv ./${pythonize-name pname} ${path}/${pythonize-name pname}
+                '';
+              }
+            )
           ];
         check-pkgs =
           p: with p; [

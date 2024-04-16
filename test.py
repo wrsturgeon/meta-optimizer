@@ -17,7 +17,16 @@ from jax import jit, grad, nn as jnn, numpy as jnp, random as jrnd
 from jax.experimental.checkify import all_checks, checkify
 from jax.numpy import linalg as jla
 from jax.tree_util import tree_map, tree_reduce, tree_structure
-from jaxtyping import jaxtyped, Array, Bool, Float, PyTree, TypeCheckError, UInt
+from jaxtyping import (
+    jaxtyped,
+    Array,
+    Bool,
+    Float,
+    Float64,
+    PyTree,
+    TypeCheckError,
+    UInt,
+)
 from math import prod
 from numpy.typing import ArrayLike
 import operator
@@ -390,8 +399,10 @@ def prop_better_than_random_permutation(
     print(ap)
     aL = jnp.sum(jnp.abs(ap - x))
     rL = jnp.sum(jnp.abs(rp - x))
-    assert jnp.isclose(allegedly_ideal.loss, aL), f"{allegedly_ideal.loss} =/= {aL}"
-    assert jnp.isclose(aL, rL) or (aL < rL), f"{aL} </= {rL}"
+    assert (
+        jnp.abs(allegedly_ideal.loss - aL) < 0.0001
+    ), f"{allegedly_ideal.loss} =/= {aL}"
+    assert (jnp.abs(aL - rL) < 0.0001) or (aL < rL), f"{aL} </= {rL}"
 
 
 def test_better_than_random_permutation_frozen_1():
@@ -589,10 +600,10 @@ def test_layer_distance():
 
 def prop_optim_trivial(
     optim: Optimizer,
-    opt_params: PyTree[Float[Array, ""]],
+    opt_params: PyTree[Float64[Array, ""]],
     opt_state_init: Callable[
-        [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
-        PyTree[Float[Array, "..."]],
+        [PyTree[Float[Array, "..."]], PyTree[Float64[Array, "..."]]],
+        PyTree[Float64[Array, "..."]],
     ],
     power: Float[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
 ):
@@ -657,10 +668,10 @@ LR = jnp.array(0.001)
 @jaxtyped(typechecker=beartype)
 def prop_optim(
     optim: Optimizer,
-    opt_params: PyTree[Float[Array, ""]],
+    opt_params: PyTree[Float64[Array, ""]],
     opt_state_init: Callable[
-        [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
-        PyTree[Float[Array, "..."]],
+        [PyTree[Float[Array, "..."]], PyTree[Float64[Array, "..."]]],
+        PyTree[Float64[Array, "..."]],
     ],
     power: Float[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
 ):
@@ -683,7 +694,7 @@ def prop_optim(
     for _ in range(EPOCHS):
         k, key = jrnd.split(key)
         x = jrnd.normal(k, [BATCH, NDIM], dtype=jnp.float32)
-        err, (w, opt_state, _) = training.step(
+        w, opt_state, _ = training.step(
             w, forward_pass, x, jnp.sin(10 * x), optim, opt_params, opt_state, power
         )
         err.throw()
@@ -738,10 +749,10 @@ def test_prop_optim():
 @jaxtyped(typechecker=beartype)
 def prop_optim_downhill(
     optim: Optimizer,
-    opt_params: PyTree[Float[Array, ""]],
+    opt_params: PyTree[Float64[Array, ""]],
     opt_state_init: Callable[
-        [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
-        PyTree[Float[Array, "..."]],
+        [PyTree[Float[Array, "..."]], PyTree[Float64[Array, "..."]]],
+        PyTree[Float64[Array, "..."]],
     ],
     power: Float[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
 ):
@@ -766,7 +777,7 @@ def prop_optim_downhill(
     for _ in range(EPOCHS):
         k, key = jrnd.split(key)
         x = jrnd.normal(k, [BATCH, NDIM], dtype=jnp.float32)
-        err, aux = training.step_downhill(
+        aux = training.step_downhill(
             w,
             forward_pass,
             x,
@@ -835,10 +846,10 @@ def test_prop_optim_downhill():
 @jaxtyped(typechecker=beartype)
 def prop_optim_global(
     optim: Optimizer,
-    opt_params: PyTree[Float[Array, ""]],
+    opt_params: PyTree[Float64[Array, ""]],
     opt_state_init: Callable[
-        [PyTree[Float[Array, "..."]], PyTree[Float[Array, "..."]]],
-        PyTree[Float[Array, "..."]],
+        [PyTree[Float[Array, "..."]], PyTree[Float64[Array, "..."]]],
+        PyTree[Float64[Array, "..."]],
     ],
     power: Float[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
 ):
@@ -872,7 +883,7 @@ def prop_optim_global(
         x = jrnd.normal(k, [BATCH, NDIM], dtype=jnp.float32)
         err, y_ideal = jit_forward_pass(w_ideal, x)
         err.throw()
-        err, (w, opt_state, opt_params, _, _) = training.step_global(
+        w, opt_state, opt_params, _, _ = training.step_global(
             w,
             forward_pass,
             x,
@@ -883,7 +894,6 @@ def prop_optim_global(
             global_minimum=w_ideal,
             power=power,
         )
-        err.throw()
         # print(f"Intrm optimizer parameters: {opt_params}")
     # print(f"Final optimizer parameters: {opt_params}")
     err, post_loss = eval_weights(w)
