@@ -1,22 +1,6 @@
 from metaoptimizer import trial
 
-from beartype import beartype
-from beartype.typing import Callable, List, Tuple
-from functools import partial
-from importlib import import_module
 from jax import nn as jnn, numpy as jnp, random as jrnd
-from jax_dataclasses import Static
-from jaxtyping import jaxtyped, Array, Float32, Float64
-import os
-from shutil import rmtree
-from types import ModuleType
-
-
-if os.getenv("NONJIT") == "1":
-    print("NOTE: `NONJIT` activated")
-else:
-    from jax.experimental.checkify import all_checks, checkify, Error
-    from jax_dataclasses import jit
 
 
 DIRECTORY = ["convergence-rates"]
@@ -35,11 +19,11 @@ if __name__ == "__main__":
 
     print("And so it begins...")
     for layers in range(2, 4):
-        print(f"  {layers} layer" + ("" if layers == 0 else "s"))
+        print(f"  {layers} layer" + ("" if layers != 1 else "s"))
         layer_dir = [*DIRECTORY, f"{layers}-layer"]
         for lg_ndim in range(4):
             ndim = int(jnp.exp2(lg_ndim))
-            print(f"    {ndim} dimension" + ("" if ndim == 0 else "s"))
+            print(f"    {ndim} dimension" + ("" if ndim != 1 else "s"))
             ndim_dir = [*layer_dir, f"{ndim}-dimensional"]
             for lg_lr in range(8):
                 lr = 0.0001 * jnp.exp2(lg_lr)

@@ -1,24 +1,15 @@
 from metaoptimizer import permutations
+from metaoptimizer.jit import jit
 from metaoptimizer.optimizers import Optimizer
 from metaoptimizer.permutations import Permutation
 
-from beartype import beartype
 from beartype.typing import Any, Callable, List, Tuple
-from functools import partial
 from jax import grad, numpy as jnp, value_and_grad
 from jax.lax import stop_gradient
 from jax.tree_util import tree_map, tree_reduce, tree_structure
-from jax_dataclasses import Static
-from jaxtyping import jaxtyped, Array, Float32, Float64, PyTree, UInt
+from jaxtyping import Array, Float32, Float64, PyTree
 import operator
 import os
-
-
-if os.getenv("NONJIT") == "1":
-    print("NOTE: `NONJIT` activated")
-else:
-    from jax.experimental.checkify import all_checks, checkify, Error
-    from jax_dataclasses import jit
 
 
 ForwardPass = Callable[
@@ -30,7 +21,7 @@ ForwardPass = Callable[
 OPTIMIZER_LR = jnp.array(0.25, dtype=jnp.float64)
 
 
-@jaxtyped(typechecker=beartype)
+@jit(1)
 def loss(
     weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
@@ -50,13 +41,13 @@ def loss(
 loss_and_grad = value_and_grad(loss)
 
 
-@jaxtyped(typechecker=beartype)
-def raw_step(
+@jit(1, 4)
+def step(
     weights: PyTree[Float64[Array, "..."]],
-    forward_pass: Static[ForwardPass],
+    forward_pass: ForwardPass,
     inputs: Float32[Array, "batch ndim_in"],
     ground_truth: Float32[Array, "batch ndim_out"],
-    optim_parameterized: Static[Optimizer],
+    optim_parameterized: Optimizer,
     opt_params: PyTree[Float64[Array, ""]],
     opt_state: PyTree[Float64[Array, "..."]],
     power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
@@ -72,93 +63,7 @@ def raw_step(
     return weights_adjusted, opt_state_adjusted, L
 
 
-if os.getenv("NONJIT") == "1":
-
-    def step(
-        weights: PyTree[Float64[Array, "..."]],
-        forward_pass: Static[ForwardPass],
-        inputs: Float32[Array, "batch ndim_in"],
-        ground_truth: Float32[Array, "batch ndim_out"],
-        optim_parameterized: Static[Optimizer],
-        opt_params: PyTree[Float64[Array, ""]],
-        opt_state: PyTree[Float64[Array, "..."]],
-        power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
-    ) -> Tuple[
-        PyTree[Float64[Array, "..."]],
-        PyTree[Float64[Array, "..."]],
-        Float32[Array, ""],
-    ]:
-        return raw_step(
-            weights,
-            forward_pass,
-            inputs,
-            ground_truth,
-            optim_parameterized,
-            opt_params,
-            opt_state,
-            power,
-        )
-
-else:
-
-    @jit
-    def jit_step(
-        weights: PyTree[Float64[Array, "..."]],
-        forward_pass: Static[ForwardPass],
-        inputs: Float32[Array, "batch ndim_in"],
-        ground_truth: Float32[Array, "batch ndim_out"],
-        optim_parameterized: Static[Optimizer],
-        opt_params: PyTree[Float64[Array, ""]],
-        opt_state: PyTree[Float64[Array, "..."]],
-        power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
-    ) -> Tuple[
-        Error,
-        Tuple[
-            PyTree[Float64[Array, "..."]],
-            PyTree[Float64[Array, "..."]],
-            Float32[Array, ""],
-        ],
-    ]:
-        return checkify(raw_step, errors=all_checks)(
-            weights,
-            forward_pass,
-            inputs,
-            ground_truth,
-            optim_parameterized,
-            opt_params,
-            opt_state,
-            power,
-        )
-
-    def step(
-        weights: PyTree[Float64[Array, "..."]],
-        forward_pass: Static[ForwardPass],
-        inputs: Float32[Array, "batch ndim_in"],
-        ground_truth: Float32[Array, "batch ndim_out"],
-        optim_parameterized: Static[Optimizer],
-        opt_params: PyTree[Float64[Array, ""]],
-        opt_state: PyTree[Float64[Array, "..."]],
-        power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
-    ) -> Tuple[
-        PyTree[Float64[Array, "..."]],
-        PyTree[Float64[Array, "..."]],
-        Float32[Array, ""],
-    ]:
-        err, y = jit_step(
-            weights,
-            forward_pass,
-            inputs,
-            ground_truth,
-            optim_parameterized,
-            opt_params,
-            opt_state,
-            power,
-        )
-        err.throw()
-        return y
-
-
-@jaxtyped(typechecker=beartype)
+@jit(1, 4)
 def update_and_retest(
     weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
@@ -182,7 +87,7 @@ def update_and_retest(
     )
 
 
-@jaxtyped(typechecker=beartype)
+@jit(2)
 def slope_away_from_local_minimum(
     opt_params: PyTree[Float64[Array, ""]],
     opt_state: PyTree[Float64[Array, "..."]],
@@ -202,13 +107,13 @@ def slope_away_from_local_minimum(
     )
 
 
-@jaxtyped(typechecker=beartype)
-def raw_step_downhill(
+@jit(1, 4)
+def step_downhill(
     weights: PyTree[Float64[Array, "..."]],
-    forward_pass: Static[ForwardPass],
+    forward_pass: ForwardPass,
     inputs: Float32[Array, "batch ndim_in"],
     ground_truth: Float32[Array, "batch ndim_out"],
-    optim_parameterized: Static[Optimizer],
+    optim_parameterized: Optimizer,
     opt_params: PyTree[Float64[Array, ""]],
     opt_state: PyTree[Float64[Array, "..."]],
     last_dLdw: PyTree[Float64[Array, "..."]],
@@ -257,105 +162,7 @@ def raw_step_downhill(
     )
 
 
-if os.getenv("NONJIT") == "1":
-
-    def step_downhill(
-        weights: PyTree[Float64[Array, "..."]],
-        forward_pass: Static[ForwardPass],
-        inputs: Float32[Array, "batch ndim_in"],
-        ground_truth: Float32[Array, "batch ndim_out"],
-        optim_parameterized: Static[Optimizer],
-        opt_params: PyTree[Float64[Array, ""]],
-        opt_state: PyTree[Float64[Array, "..."]],
-        last_dLdw: PyTree[Float64[Array, "..."]],
-        power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
-    ) -> Tuple[
-        PyTree[Float64[Array, "..."]],
-        PyTree[Float64[Array, "..."]],
-        PyTree[Float64[Array, ""]],
-        Float32[Array, ""],
-        PyTree[Float64[Array, "..."]],
-    ]:
-        return raw_step_downhill(
-            weights,
-            forward_pass,
-            inputs,
-            ground_truth,
-            optim_parameterized,
-            opt_params,
-            opt_state,
-            last_dLdw,
-            power,
-        )
-
-else:
-
-    @jit
-    def jit_step_downhill(
-        weights: PyTree[Float64[Array, "..."]],
-        forward_pass: Static[ForwardPass],
-        inputs: Float32[Array, "batch ndim_in"],
-        ground_truth: Float32[Array, "batch ndim_out"],
-        optim_parameterized: Static[Optimizer],
-        opt_params: PyTree[Float64[Array, ""]],
-        opt_state: PyTree[Float64[Array, "..."]],
-        last_dLdw: PyTree[Float64[Array, "..."]],
-        power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
-    ) -> Tuple[
-        Error,
-        Tuple[
-            PyTree[Float64[Array, "..."]],
-            PyTree[Float64[Array, "..."]],
-            PyTree[Float64[Array, ""]],
-            Float32[Array, ""],
-            PyTree[Float64[Array, "..."]],
-        ],
-    ]:
-        return checkify(raw_step_downhill, errors=all_checks)(
-            weights,
-            forward_pass,
-            inputs,
-            ground_truth,
-            optim_parameterized,
-            opt_params,
-            opt_state,
-            last_dLdw,
-            power,
-        )
-
-    def step_downhill(
-        weights: PyTree[Float64[Array, "..."]],
-        forward_pass: Static[ForwardPass],
-        inputs: Float32[Array, "batch ndim_in"],
-        ground_truth: Float32[Array, "batch ndim_out"],
-        optim_parameterized: Static[Optimizer],
-        opt_params: PyTree[Float64[Array, ""]],
-        opt_state: PyTree[Float64[Array, "..."]],
-        last_dLdw: PyTree[Float64[Array, "..."]],
-        power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
-    ) -> Tuple[
-        PyTree[Float64[Array, "..."]],
-        PyTree[Float64[Array, "..."]],
-        PyTree[Float64[Array, ""]],
-        Float32[Array, ""],
-        PyTree[Float64[Array, "..."]],
-    ]:
-        err, y = jit_step_downhill(
-            weights,
-            forward_pass,
-            inputs,
-            ground_truth,
-            optim_parameterized,
-            opt_params,
-            opt_state,
-            last_dLdw,
-            power,
-        )
-        err.throw()
-        return y
-
-
-@jaxtyped(typechecker=beartype)
+@jit(2)
 def opt_step_global(
     opt_params: PyTree[Float64[Array, ""]],
     opt_state: PyTree[Float64[Array, "..."]],
@@ -381,13 +188,13 @@ def opt_step_global(
     return L, (opt_state_adjusted, weights_adjusted, perm)
 
 
-@jaxtyped(typechecker=beartype)
-def raw_step_global(
+@jit(1, 4)
+def step_global(
     weights: PyTree[Float64[Array, "..."]],
-    forward_pass: Static[ForwardPass],
+    forward_pass: ForwardPass,
     inputs: Float32[Array, "batch ndim_in"],
     ground_truth: Float32[Array, "batch ndim_out"],
-    optim_parameterized: Static[Optimizer],
+    optim_parameterized: Optimizer,
     opt_params: PyTree[Float64[Array, ""]],
     opt_state: PyTree[Float64[Array, "..."]],
     global_minimum: PyTree[Float64[Array, "..."]],
@@ -401,7 +208,8 @@ def raw_step_global(
 ]:
     L, dLdw = loss_and_grad(weights, forward_pass, inputs, ground_truth, power)
     dLdo, (opt_state_adjusted, weights_adjusted, perm) = grad(
-        opt_step_global, has_aux=True
+        opt_step_global,
+        has_aux=True,
     )(
         opt_params,
         opt_state,
@@ -422,102 +230,3 @@ def raw_step_global(
         perm,
         L,
     )
-
-
-if os.getenv("NONJIT") == "1":
-
-    def step_global(
-        weights: PyTree[Float64[Array, "..."]],
-        forward_pass: Static[ForwardPass],
-        inputs: Float32[Array, "batch ndim_in"],
-        ground_truth: Float32[Array, "batch ndim_out"],
-        optim_parameterized: Static[Optimizer],
-        opt_params: PyTree[Float64[Array, ""]],
-        opt_state: PyTree[Float64[Array, "..."]],
-        global_minimum: PyTree[Float64[Array, "..."]],
-        power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
-    ) -> Tuple[
-        PyTree[Float64[Array, "..."]],
-        PyTree[Float64[Array, "..."]],
-        PyTree[Float64[Array, ""]],
-        List[Permutation],
-        Float32[Array, ""],
-    ]:
-        return raw_step_global(
-            weights,
-            forward_pass,
-            inputs,
-            ground_truth,
-            optim_parameterized,
-            opt_params,
-            opt_state,
-            global_minimum,
-            power,
-        )
-
-else:
-
-    @jit
-    def jit_step_global(
-        weights: PyTree[Float64[Array, "..."]],
-        forward_pass: Static[ForwardPass],
-        inputs: Float32[Array, "batch ndim_in"],
-        ground_truth: Float32[Array, "batch ndim_out"],
-        optim_parameterized: Static[Optimizer],
-        opt_params: PyTree[Float64[Array, ""]],
-        opt_state: PyTree[Float64[Array, "..."]],
-        global_minimum: PyTree[Float64[Array, "..."]],
-        power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
-    ) -> Tuple[
-        Error,
-        Tuple[
-            PyTree[Float64[Array, "..."]],
-            PyTree[Float64[Array, "..."]],
-            PyTree[Float64[Array, ""]],
-            List[Permutation],
-            Float32[Array, ""],
-        ],
-    ]:
-        print("RUNNING `jit_step_global` FOR THE FIRST TIME")
-        return checkify(raw_step_global, errors=all_checks)(
-            weights,
-            forward_pass,
-            inputs,
-            ground_truth,
-            optim_parameterized,
-            opt_params,
-            opt_state,
-            global_minimum,
-            power,
-        )
-
-    def step_global(
-        weights: PyTree[Float64[Array, "..."]],
-        forward_pass: Static[ForwardPass],
-        inputs: Float32[Array, "batch ndim_in"],
-        ground_truth: Float32[Array, "batch ndim_out"],
-        optim_parameterized: Static[Optimizer],
-        opt_params: PyTree[Float64[Array, ""]],
-        opt_state: PyTree[Float64[Array, "..."]],
-        global_minimum: PyTree[Float64[Array, "..."]],
-        power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
-    ) -> Tuple[
-        PyTree[Float64[Array, "..."]],
-        PyTree[Float64[Array, "..."]],
-        PyTree[Float64[Array, ""]],
-        List[Permutation],
-        Float32[Array, ""],
-    ]:
-        err, y = jit_step_global(
-            weights,
-            forward_pass,
-            inputs,
-            ground_truth,
-            optim_parameterized,
-            opt_params,
-            opt_state,
-            global_minimum,
-            power,
-        )
-        err.throw()
-        return y

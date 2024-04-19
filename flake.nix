@@ -2,16 +2,11 @@
   description = "Quantifying performance of machine-learning optimizers like RMSProp & Adam.";
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
-    jax-dataclasses-src = {
-      flake = false;
-      url = "github:brentyi/jax_dataclasses";
-    };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   };
   outputs =
     {
       flake-utils,
-      jax-dataclasses-src,
       nixpkgs,
       self,
     }:
@@ -23,7 +18,6 @@
         src = ./.;
         pkgs = import nixpkgs { inherit system; };
         pypkgs = pkgs.python311Packages;
-        pythonize-name = nixpkgs.lib.strings.stringAsChars (c: if c == "-" then "_" else c);
         # TODO: Use pylyzer when 1.76.0+ supported
         default-pkgs =
           p:
@@ -42,21 +36,6 @@
                 propagatedBuildInputs = old.propagatedBuildInputs ++ [ p.jaxlib-bin ];
               }
             ))
-            (
-              let
-                pname = "jax_dataclasses";
-                path = "$out/lib/${pypkgs.python.libPrefix}/site-packages";
-              in
-              pkgs.stdenv.mkDerivation {
-                inherit pname;
-                version = "main";
-                src = jax-dataclasses-src;
-                installPhase = ''
-                  mkdir -p ${path}
-                  mv ./${pythonize-name pname} ${path}/${pythonize-name pname}
-                '';
-              }
-            )
           ];
         check-pkgs =
           p: with p; [
@@ -67,7 +46,6 @@
           p: with p; [
             black
             coverage
-            mypy
           ];
         dev-pkgs = p: with p; [ python-lsp-server ];
         lookup-pkg-sets = ps: p: builtins.concatMap (f: f p) ps;
@@ -83,9 +61,9 @@
               ];
             in
             ''
+              export NONJIT=1
               rm -fr result
               ${python} -m black --check .
-              ${python} -m mypy .
               ${python} -m coverage run --omit='/nix/*' -m pytest -Werror test.py
               ${python} -m coverage report -m --fail-under=100
             '';
@@ -143,6 +121,7 @@
           };
         };
         devShells.default = pkgs.mkShell {
+          JAX_ENABLE_X64 = "1";
           packages = lookup-pkg-sets [
             default-pkgs
             check-pkgs

@@ -1,17 +1,17 @@
 from metaoptimizer import feedforward, permutations, training
-from metaoptimizer.feedforward import Weights
+from metaoptimizer.jit import jit
 from metaoptimizer.permutations import Permutation
 from metaoptimizer.training import ForwardPass, Optimizer
+from metaoptimizer.weights import wb, Weights
 
 from beartype import beartype
-from beartype.typing import Callable, List, Tuple
-from functools import partial
+from beartype.typing import Callable, List, Optional, Tuple, TypeAlias
 from importlib import import_module
-from jax import nn as jnn, numpy as jnp, random as jrnd
+from jax import debug, nn as jnn, numpy as jnp, random as jrnd
 from jax.experimental import io_callback
+from jax.lax import fori_loop
 from jax.tree_util import tree_flatten, tree_map, tree_unflatten
-from jax_dataclasses import Static
-from jaxtyping import jaxtyped, Array, Float32, Float64, PyTree
+from jaxtyping import jaxtyped, Array, Bool, Float32, Float64, PyTree, UInt16
 import matplotlib.pyplot as plt
 import operator
 import os
@@ -20,25 +20,18 @@ from time import time
 from types import ModuleType
 
 
-if os.getenv("NONJIT") == "1":
-    print("NOTE: `NONJIT` activated")
-else:
-    from jax.experimental.checkify import all_checks, checkify, Error
-    from jax_dataclasses import jit
-
-
-@jaxtyped(typechecker=beartype)
-def raw_step(
-    batch: Static[int],
-    ndim: Static[int],
-    forward_pass: Static[ForwardPass],
-    optimizer: Static[Optimizer],
-    w_ideal: Weights,
+@jit(6, 7, 8, 9)
+def step(
+    key: Array,
+    w: Weights,
     opt_state: PyTree[Float64[Array, "..."]],
     opt_params: PyTree[Float64[Array, ""]],
-    w: Weights,
+    w_ideal: Weights,
     power: Float32[Array, ""],
-    key: Array,
+    batch: int,
+    ndim: int,
+    forward_pass: ForwardPass,
+    optimizer: Optimizer,
 ) -> Tuple[
     Array,
     Weights,
@@ -64,146 +57,341 @@ def raw_step(
     return key, w, opt_state, opt_params, permutation, L
 
 
-if os.getenv("NONJIT") == "1":
+TrainOneStepOutput: TypeAlias = Tuple[
+    Array,
+    Weights,
+    PyTree[Float64[Array, "..."]],
+    PyTree[Float64[Array, ""]],
+    Optional[Float32[Array, "n_iter"]],
+    Optional[Float64[Array, "n_iter layers n_out n_in+1"]],
+    Optional[UInt16[Array, "n_iter layers n_out"]],
+    Optional[Bool[Array, "n_iter layers n_out"]],
+    Optional[PyTree[Float64[Array, "n_iter"]]],
+    Optional[Float64[Array, "n_iter layers n_out n_in"]],
+    Optional[Float64[Array, "n_iter layers n_out"]],
+]
 
-    def step(
-        batch: Static[int],
-        ndim: Static[int],
-        forward_pass: Static[ForwardPass],
-        optimizer: Static[Optimizer],
-        w_ideal: Weights,
-        opt_state: PyTree[Float64[Array, "..."]],
-        opt_params: PyTree[Float64[Array, ""]],
-        w: Weights,
-        power: Float32[Array, ""],
-        key: Array,
-    ) -> Tuple[
-        Array,
-        Weights,
-        PyTree[Float64[Array, "..."]],
-        PyTree[Float64[Array, ""]],
-        List[Permutation],
-        Float32[Array, ""],
-    ]:
-        return raw_step(
+
+@jit(6, 7, 8, 9)
+def train_one_step(
+    key: Array,
+    w: Weights,
+    opt_state: PyTree[Float64[Array, "..."]],
+    opt_params: PyTree[Float64[Array, ""]],
+    w_ideal: Weights,
+    power: Float32[Array, ""],
+    batch: int,
+    ndim: int,
+    forward_pass: ForwardPass,
+    optimizer: Optimizer,
+    losses: Optional[Float32[Array, "n_iter"]],
+    weight_distances: Optional[Float64[Array, "n_iter layers n_out n_in+1"]],
+    permutation_indices: Optional[UInt16[Array, "n_iter layers n_out"]],
+    permutation_flips: Optional[Bool[Array, "n_iter layers n_out"]],
+    opt_params_hist: Optional[PyTree[Float64[Array, "n_iter"]]],
+    w_hist: Optional[Float64[Array, "n_iter layers n_out n_in"]],
+    b_hist: Optional[Float64[Array, "n_iter layers n_out"]],
+    i: UInt16[Array, ""],
+) -> TrainOneStepOutput:
+
+    key, w, opt_state, opt_params, permutation, L = step(
+        key,
+        w,
+        opt_state,
+        opt_params,
+        w_ideal,
+        power,
+        batch,
+        ndim,
+        forward_pass,
+        optimizer,
+    )
+
+    if losses is not None:
+        losses = losses.at[i].set(jnp.array(L))
+
+    if weight_distances is not None:
+        wb_actual = wb(w)
+        wb_ideal = wb(w_ideal)
+        weight_distances = weight_distances.at[i].set(
+            jnp.sum(jnp.abs(wb_actual - wb_ideal))
+        )
+
+    if permutation_indices is not None:
+        permutation_indices = permutation_indices.at[i].set(
+            jnp.array(permutation.indices)
+        )
+
+    if permutation_flips is not None:
+        permutation_flips = permutation_flips.at[i].set(jnp.array(permutation.flip))
+
+    if opt_params_hist is not None:
+        opt_params_hist = tree_map(
+            lambda x, y: x.at[i].set(y),
+            opt_params_hist,
+            opt_params,
+        )
+
+    if w_hist is not None:
+        w_hist = w_hist.at[i].set(w.W)
+
+    if b_hist is not None:
+        b_hist = b_hist.at[i].set(w.B)
+
+    return (
+        key,
+        w,
+        opt_state,
+        opt_params,
+        losses,
+        weight_distances,
+        permutation_indices,
+        permutation_flips,
+        opt_params_hist,
+        w_hist,
+        b_hist,
+    )
+
+
+@jit
+def train_contiguous(
+    key: Array,
+    w: Weights,
+    opt_state: PyTree[Float64[Array, "..."]],
+    opt_params: PyTree[Float64[Array, ""]],
+    w_ideal: Weights,
+    power: Float32[Array, ""],
+    batch: int,
+    ndim: int,
+    forward_pass: ForwardPass,
+    optimizer: Optimizer,
+    how_many_iterations: UInt16[Array, ""],
+) -> TrainOneStepOutput:
+
+    def fold(i: UInt16[Array, ""], package: TrainOneStepOutput) -> TrainOneStepOutput:
+
+        (
+            key,
+            w,
+            opt_state,
+            opt_params,
+            losses,
+            weight_distances,
+            permutation_indices,
+            permutation_flips,
+            opt_params_hist,
+            w_hist,
+            b_hist,
+        ) = package
+
+        return train_one_step(
+            key,
+            w,
+            opt_state,
+            opt_params,
+            w_ideal,
+            power,
             batch,
             ndim,
             forward_pass,
             optimizer,
-            w_ideal,
-            opt_state,
-            opt_params,
-            w,
-            power,
-            key,
+            losses,
+            weight_distances,
+            permutation_indices,
+            permutation_flips,
+            opt_params_hist,
+            w_hist,
+            b_hist,
+            i,
         )
 
-else:
+    # NOTE: `fori_loop` does not unroll! (this is good)
+    return fori_loop(
+        0,
+        how_many_iterations,
+        fold,
+        (
+            key,
+            w,
+            opt_state,
+            opt_params,
+            jnp.empty([how_many_iterations], dtype=jnp.float32),
+            jnp.empty([how_many_iterations], dtype=jnp.float32),
+            jnp.empty([how_many_iterations], dtype=jnp.uint16),
+            jnp.empty([how_many_iterations], dtype=jnp.bool),
+            jnp.empty([how_many_iterations], dtype=jnp.float32),
+            jnp.empty([how_many_iterations], dtype=jnp.float32),
+            jnp.empty([how_many_iterations], dtype=jnp.float32),
+        ),
+    )
 
-    @jit
-    def jit_step(
-        batch: Static[int],
-        ndim: Static[int],
-        forward_pass: Static[ForwardPass],
-        optimizer: Static[Optimizer],
-        w_ideal: Weights,
-        opt_state: PyTree[Float64[Array, "..."]],
-        opt_params: PyTree[Float64[Array, ""]],
-        w: Weights,
-        power: Float32[Array, ""],
-        key: Array,
-    ) -> Tuple[
-        Error,
-        Tuple[
-            Array,
-            Weights,
-            PyTree[Float64[Array, "..."]],
-            PyTree[Float64[Array, ""]],
-            List[Permutation],
-            Float32[Array, ""],
-        ],
-    ]:
-        print("RUNNING `jit_step` FOR THE FIRST TIME")
-        return checkify(raw_step, errors=all_checks)(
+
+@jit
+def train_percentages(
+    key: Array,
+    w: Weights,
+    opt_state: PyTree[Float64[Array, "..."]],
+    opt_params: PyTree[Float64[Array, ""]],
+    w_ideal: Weights,
+    power: Float32[Array, ""],
+    batch: int,
+    ndim: int,
+    forward_pass: ForwardPass,
+    optimizer: Optimizer,
+    how_many_iterations: UInt16[Array, ""],
+) -> Tuple[
+    Optional[Float32[Array, "n_iter"]],
+    Optional[Float64[Array, "n_iter layers n_out n_in+1"]],
+    Optional[UInt16[Array, "n_iter layers n_out"]],
+    Optional[Bool[Array, "n_iter layers n_out"]],
+    Optional[PyTree[Float64[Array, "n_iter"]]],
+    Optional[Float64[Array, "n_iter layers n_out n_in"]],
+    Optional[Float64[Array, "n_iter layers n_out"]],
+]:
+
+    pct_size = how_many_iterations // 100
+    assert pct_size * 100 == how_many_iterations  # i.e., cleanly divisible
+
+    def fold(i: UInt16[Array, ""], package: TrainOneStepOutput) -> TrainOneStepOutput:
+
+        (
+            key,
+            w,
+            opt_state,
+            opt_params,
+            losses,
+            weight_distances,
+            permutation_indices,
+            permutation_flips,
+            opt_params_hist,
+            w_hist,
+            b_hist,
+        ) = package
+
+        (
+            key,
+            w,
+            opt_state,
+            opt_params,
+            pct_losses,
+            pct_weight_distances,
+            pct_permutation_indices,
+            pct_permutation_flips,
+            pct_opt_params_hist,
+            pct_w_hist,
+            pct_b_hist,
+        ) = train_contiguous(
+            key,
+            w,
+            opt_state,
+            opt_params,
+            w_ideal,
+            power,
             batch,
             ndim,
             forward_pass,
             optimizer,
-            w_ideal,
-            opt_state,
-            opt_params,
-            w,
-            power,
-            key,
+            pct_size,
         )
 
-    def step(
-        batch: Static[int],
-        ndim: Static[int],
-        forward_pass: Static[ForwardPass],
-        optimizer: Static[Optimizer],
-        w_ideal: Weights,
-        opt_state: PyTree[Float64[Array, "..."]],
-        opt_params: PyTree[Float64[Array, ""]],
-        w: Weights,
-        power: Float32[Array, ""],
-        key: Array,
-    ) -> Tuple[
-        Array,
-        Weights,
-        PyTree[Float64[Array, "..."]],
-        PyTree[Float64[Array, ""]],
-        List[Permutation],
-        Float32[Array, ""],
-    ]:
-        err, y = jit_step(
-            batch,
-            ndim,
-            forward_pass,
-            optimizer,
-            w_ideal,
+        if losses is not None:
+            losses.at[i].set(pct_losses)
+        if weight_distances is not None:
+            weight_distances.at[i].set(pct_weight_distances)
+        if permutation_indices is not None:
+            permutation_indices.at[i].set(pct_permutation_indices)
+        if permutation_flips is not None:
+            permutation_flips.at[i].set(pct_permutation_flips)
+        if opt_params_hist is not None:
+            opt_params_hist.at[i].set(pct_opt_params_hist)
+        if w_hist is not None:
+            w_hist.at[i].set(pct_w_hist)
+        if b_hist is not None:
+            b_hist.at[i].set(pct_b_hist)
+
+        debug.print("{j}%", j=(i + 1))
+
+        return (
+            key,
+            w,
             opt_state,
             opt_params,
-            w,
-            power,
-            key,
+            losses,
+            weight_distances,
+            permutation_indices,
+            permutation_flips,
+            opt_params_hist,
+            w_hist,
+            b_hist,
         )
-        err.throw()
-        return y
+
+    # NOTE: `fori_loop` does not unroll! (this is good)
+    (
+        key,
+        w,
+        opt_state,
+        opt_params,
+        losses,
+        weight_distances,
+        permutation_indices,
+        permutation_flips,
+        opt_params_hist,
+        w_hist,
+        b_hist,
+    ) = fori_loop(
+        0,
+        100,
+        fold,
+        (
+            key,
+            w,
+            opt_state,
+            opt_params,
+            losses,
+            weight_distances,
+            permutation_indices,
+            permutation_flips,
+            opt_params_hist,
+            w_hist,
+            b_hist,
+        ),
+    )
+
+    return (
+        losses,
+        weight_distances,
+        permutation_indices,
+        permutation_flips,
+        opt_params_hist,
+        w_hist,
+        b_hist,
+    )
 
 
-@jaxtyped(typechecker=beartype)
+@jit
 def run(
     key: Array,
-    ndim: Static[int] = 3,
-    batch: Static[int] = 1,
-    layers: Static[int] = 2,
-    nonlinearity: Static[
-        Callable[
-            [Float32[Array, "*n"]],
-            Float32[Array, "*n"],
-        ]
-    ] = jnn.gelu,
-    optim: Static[ModuleType] = import_module("metaoptimizer.optimizers.sgd"),
-    training_steps: Static[int] = 100000,
-    subdir: Static[List[str]] = ["logs"],
-    convergence_only: Static[bool] = False,
+    ndim: int = 3,
+    batch: int = 1,
+    layers: int = 2,
+    nonlinearity: Callable[[Float32[Array, "*n"]], Float32[Array, "*n"]] = jnn.gelu,
+    optim: ModuleType = import_module("metaoptimizer.optimizers.sgd"),
+    training_steps: int = 100000,
+    subdir: List[str] = ["logs"],
+    convergence_only: bool = False,
     power: Float32[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
     lr: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
     initial_distance: Float64[Array, ""] = jnp.array(0.1, dtype=jnp.float64),
     prefix: str = "",
 ) -> None:
 
-    print(prefix + "Setting up the model architecture...")
+    debug.print(prefix + "Setting up the model architecture...")
 
     k1, k2 = jrnd.split(key)
 
     # Weight initialization (note `w_ideal` is really the *goal*)
-    w_ideal = feedforward.init(
-        [ndim for _ in range(layers + 1)],
-        k1,
-        random_biases=True,
-    )
+    shapes = tuple([ndim for _ in range(layers + 1)])
+    w_ideal = feedforward.init(shapes, k1, True)
 
     # Uncomment if you want `w` to start already very close to `w_ideal`:
     w_flat, w_def = tree_flatten(w_ideal)
@@ -218,6 +406,13 @@ def run(
     opt_params = optim.defaults(lr=lr)
     opt_state = optim.init(w, opt_params)
 
+    # Forward pass initialization
+    forward_pass: ForwardPass = lambda weights, x: feedforward.run(
+        weights,
+        x,
+        nonlinearity,
+    )
+
     # Replicable pseudorandomness
     key = jrnd.PRNGKey(42)  # the answer
 
@@ -230,7 +425,7 @@ def run(
     if not convergence_only:
         losses = jnp.empty([training_steps], dtype=jnp.float32)
         permutation_indices = [
-            jnp.empty([training_steps, ndim], dtype=jnp.uint32)
+            jnp.empty([training_steps, ndim], dtype=jnp.uint16)
             for _ in range(nonterminal_layers)
         ]
         permutation_flips = [
@@ -241,54 +436,34 @@ def run(
         w_hist: List[PyTree[Float64[Array, "..."]]] = []
         w_ideal_hist: List[PyTree[Float64[Array, "..."]]] = []
 
-    print(prefix + "Compiling the training loop...")
+    debug.print(prefix + "Compiling the training loop...")
 
     # Training loop:
     t0 = time()
-    EPOCH_PERCENT = training_steps // 100
-    assert training_steps == EPOCH_PERCENT * 100  # i.e. divisible by 100
-    for percent in range(100):
-        for i in range(EPOCH_PERCENT * percent, EPOCH_PERCENT * (percent + 1)):
-            key, w, opt_state, opt_params, permutation, L = step(
-                batch,
-                ndim,
-                partial(feedforward.run, nl=nonlinearity),
-                optimizer,
-                w_ideal,
-                opt_state,
-                opt_params,
-                w,
-                power,
-                key,
-            )
+    (
+        losses,
+        weight_distances,
+        permutation_indices,
+        permutation_flips,
+        opt_params_hist,
+        w_hist,
+        b_hist,
+    ) = train_percentages(
+        key,
+        w,
+        opt_state,
+        opt_params,
+        w_ideal,
+        power,
+        batch,
+        ndim,
+        forward_pass,
+        optimizer,
+        training_steps,
+    )
+    debug.print(prefix + f"Done in {int(time() - t0)} seconds")
 
-            for j in range(layers):
-                dist = jnp.array(
-                    jnp.sum(jnp.abs(w.W[j] - w_ideal.B[j]))
-                    + jnp.sum(jnp.abs(w.B[j] - w_ideal.B[j]))
-                )
-                weight_distances[j][i] = dist
-
-            if not convergence_only:
-                losses[i] = jnp.array(L)
-                for j in range(nonterminal_layers):
-                    permutation_indices[j][i] = jnp.array(permutation[j].indices)
-                    permutation_flips[j][i] = jnp.array(permutation[j].flip)
-                opt_params_hist.append(opt_params)
-                w_hist.append(tree_map(jnp.ravel, w))
-                w_ideal_hist.append(
-                    tree_map(
-                        jnp.ravel,
-                        permutations.permute_hidden_layers(w_ideal, permutation),
-                    )
-                )
-
-        print(prefix + f"{percent + 1}%")
-
-    print(prefix + f"Done in {int(time() - t0)} seconds")
-    print(prefix + "Saving...")
-
-    w_ideal_permuted = permutations.permute_hidden_layers(w_ideal, permutation)
+    debug.print(prefix + "Saving...")
 
     cwd = os.getcwd()
     cwd = os.path.join(cwd, *subdir)
@@ -314,6 +489,9 @@ def run(
         os.makedirs(path("optimizer"))
         os.makedirs(path("permutations"))
         os.makedirs(path("weights"))
+
+    w_ideal_permuted = permutations.permute_hidden_layers(w_ideal, permutation)
+
     for i in range(layers):
 
         save(

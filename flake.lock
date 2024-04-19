@@ -18,22 +18,6 @@
         "type": "github"
       }
     },
-    "jax-dataclasses-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1701980801,
-        "narHash": "sha256-0gTEyax+04S+L2yA7PTSBtVE8YAbefauOId5+/lnfx8=",
-        "owner": "brentyi",
-        "repo": "jax_dataclasses",
-        "rev": "576763858940f5ddb2bdc4fb780696be489b1c15",
-        "type": "github"
-      },
-      "original": {
-        "owner": "brentyi",
-        "repo": "jax_dataclasses",
-        "type": "github"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1711703276,
@@ -53,7 +37,6 @@
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
-        "jax-dataclasses-src": "jax-dataclasses-src",
         "nixpkgs": "nixpkgs"
       }
     },
