@@ -3,13 +3,16 @@ from metaoptimizer.jit import jit
 from metaoptimizer.optimizers import Optimizer
 from metaoptimizer.permutations import Permutation
 
+from beartype import beartype
 from beartype.typing import Any, Callable, List, Tuple
 from jax import grad, numpy as jnp, value_and_grad
+from jax.errors import TracerBoolConversionError
 from jax.lax import stop_gradient
 from jax.tree_util import tree_map, tree_reduce, tree_structure
-from jaxtyping import Array, Float32, Float64, PyTree
+from jaxtyping import jaxtyped, Array, Float32, Float64, PyTree
 import operator
 import os
+import sys
 
 
 ForwardPass = Callable[
@@ -163,6 +166,7 @@ def step_downhill(
 
 
 @jit(2)
+# @jaxtyped(typechecker=beartype)
 def opt_step_global(
     opt_params: PyTree[Float64[Array, ""]],
     opt_state: PyTree[Float64[Array, "..."]],
@@ -178,17 +182,32 @@ def opt_step_global(
         List[Permutation],
     ],
 ]:
-    opt_state_adjusted, weights_adjusted = optim_parameterized(
+    # try:
+    #     assert tree_reduce(
+    #         operator.and_,
+    #         tree_map(
+    #             lambda x: jnp.all(jnp.isfinite(x)),
+    #             weights,
+    #         ),
+    #     ), "Non-finite input"
+    # except TracerBoolConversionError:
+    #     sys.exit("Please don't JIT-compile `training.opt_step_global`!")
+
+    print("Calling `optim_parameterized`...")
+    opt_state_adjusted, weights_adjusted = jit()(optim_parameterized)(
         opt_params, opt_state, weights, dLdw
     )
+    print("Calling `permutations.layer_distance`...")
     L, perm = permutations.layer_distance(
         actual=weights_adjusted,
         ideal=global_minimum,
     )
+    print(f"Compiling `opt_step_global`...")
     return L, (opt_state_adjusted, weights_adjusted, perm)
 
 
 @jit(1, 4)
+# @jaxtyped(typechecker=beartype)
 def step_global(
     weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
@@ -206,7 +225,9 @@ def step_global(
     List[Permutation],
     Float32[Array, ""],
 ]:
+    print("Calling `loss_and_grad`...")
     L, dLdw = loss_and_grad(weights, forward_pass, inputs, ground_truth, power)
+    print("Calling `grad`...")
     dLdo, (opt_state_adjusted, weights_adjusted, perm) = grad(
         opt_step_global,
         has_aux=True,
@@ -218,11 +239,13 @@ def step_global(
         dLdw,
         global_minimum,
     )
+    print("Stepping parameters...")
     opt_params_adjusted: PyTree[Float64[Array, "..."]] = tree_map(
         lambda w, d: w - OPTIMIZER_LR * d,
         opt_params,
         dLdo,
     )
+    print(f"Compiling `step_global`...")
     return (
         weights_adjusted,
         opt_state_adjusted,

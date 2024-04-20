@@ -7,15 +7,14 @@ from jaxtyping import jaxtyped
 import os
 
 
-print(f"Environment variable `NONJIT` is `{os.getenv('NONJIT')}`")
-if os.getenv("NONJIT") == "1":
+if os.getenv("NONJIT") == "1":  # pragma: no cover
 
     print("*** NOTE: `NONJIT` enabled")
 
     def jit(*static_argnums) -> Callable[[Callable], Callable]:
         return jaxtyped(typechecker=beartype)  # itself a function
 
-else:
+else:  # pragma: no cover
 
     print("*** NOTE: `NONJIT` NOT enabled; JIT-compiling everything...")
 

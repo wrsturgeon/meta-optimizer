@@ -2,7 +2,7 @@ from metaoptimizer import feedforward, permutations, training
 from metaoptimizer.jit import jit
 from metaoptimizer.permutations import Permutation
 from metaoptimizer.training import ForwardPass, Optimizer
-from metaoptimizer.weights import wb, Weights
+from metaoptimizer.weights import layers, wb, Weights
 
 from beartype import beartype
 from beartype.typing import Callable, List, Optional, Tuple, TypeAlias
@@ -11,7 +11,17 @@ from jax import debug, nn as jnn, numpy as jnp, random as jrnd
 from jax.experimental import io_callback
 from jax.lax import fori_loop
 from jax.tree_util import tree_flatten, tree_map, tree_unflatten
-from jaxtyping import jaxtyped, Array, Bool, Float32, Float64, PyTree, UInt16
+from jaxtyping import (
+    jaxtyped,
+    Array,
+    Bool,
+    Float32,
+    Float64,
+    Int64,
+    PyTree,
+    UInt16,
+    UInt64,
+)
 import matplotlib.pyplot as plt
 import operator
 import os
@@ -40,9 +50,13 @@ def step(
     List[Permutation],
     Float32[Array, ""],
 ]:
+    print("Splitting random key...")
     k, key = jrnd.split(key)
+    print("Generating Gaussian input...")
     x = jrnd.normal(k, [batch, ndim], dtype=jnp.float32)
+    print("Computing the ideal forward pass...")
     y_ideal = forward_pass(w_ideal, x)
+    print("Calling `training.step_global`...")
     w, opt_state, opt_params, permutation, L = training.step_global(
         w,
         forward_pass,
@@ -54,21 +68,23 @@ def step(
         w_ideal,
         power,
     )
+    print("Compiling `step`...")
     return key, w, opt_state, opt_params, permutation, L
 
 
+# TODO: re-order the below s.t. `n_in` is used before `n_in+1`, then replace meaningless `n_in_plus_1` ACROSS THIS FILE (there are multiple)
 TrainOneStepOutput: TypeAlias = Tuple[
     Array,
     Weights,
     PyTree[Float64[Array, "..."]],
     PyTree[Float64[Array, ""]],
     Optional[Float32[Array, "n_iter"]],
-    Optional[Float64[Array, "n_iter layers n_out n_in+1"]],
+    Optional[Float32[Array, "n_iter layers n_out n_in_plus_1"]],
     Optional[UInt16[Array, "n_iter layers n_out"]],
     Optional[Bool[Array, "n_iter layers n_out"]],
-    Optional[PyTree[Float64[Array, "n_iter"]]],
-    Optional[Float64[Array, "n_iter layers n_out n_in"]],
-    Optional[Float64[Array, "n_iter layers n_out"]],
+    Optional[PyTree[Float32[Array, "n_iter"]]],
+    Optional[Float32[Array, "n_iter layers n_out n_in"]],
+    Optional[Float32[Array, "n_iter layers n_out"]],
 ]
 
 
@@ -85,15 +101,16 @@ def train_one_step(
     forward_pass: ForwardPass,
     optimizer: Optimizer,
     losses: Optional[Float32[Array, "n_iter"]],
-    weight_distances: Optional[Float64[Array, "n_iter layers n_out n_in+1"]],
+    weight_distances: Optional[Float32[Array, "n_iter layers n_out n_in_plus_1"]],
     permutation_indices: Optional[UInt16[Array, "n_iter layers n_out"]],
     permutation_flips: Optional[Bool[Array, "n_iter layers n_out"]],
-    opt_params_hist: Optional[PyTree[Float64[Array, "n_iter"]]],
-    w_hist: Optional[Float64[Array, "n_iter layers n_out n_in"]],
-    b_hist: Optional[Float64[Array, "n_iter layers n_out"]],
-    i: UInt16[Array, ""],
+    opt_params_hist: Optional[PyTree[Float32[Array, "n_iter"]]],
+    w_hist: Optional[Float32[Array, "n_iter layers n_out n_in"]],
+    b_hist: Optional[Float32[Array, "n_iter layers n_out"]],
+    i: Int64[Array, ""],
 ) -> TrainOneStepOutput:
 
+    print("Calling `step`...")
     key, w, opt_state, opt_params, permutation, L = step(
         key,
         w,
@@ -107,9 +124,11 @@ def train_one_step(
         optimizer,
     )
 
+    print("Updating `losses`...")
     if losses is not None:
         losses = losses.at[i].set(jnp.array(L))
 
+    print("Updating `weight_distances`...")
     if weight_distances is not None:
         wb_actual = wb(w)
         wb_ideal = wb(w_ideal)
@@ -117,14 +136,17 @@ def train_one_step(
             jnp.sum(jnp.abs(wb_actual - wb_ideal))
         )
 
+    print("Updating `permutation_indices`...")
     if permutation_indices is not None:
         permutation_indices = permutation_indices.at[i].set(
             jnp.array(permutation.indices)
         )
 
+    print("Updating `permutation_flips`...")
     if permutation_flips is not None:
         permutation_flips = permutation_flips.at[i].set(jnp.array(permutation.flip))
 
+    print("Updating `opt_params_hist`...")
     if opt_params_hist is not None:
         opt_params_hist = tree_map(
             lambda x, y: x.at[i].set(y),
@@ -132,12 +154,15 @@ def train_one_step(
             opt_params,
         )
 
+    print("Updating `w_hist`...")
     if w_hist is not None:
         w_hist = w_hist.at[i].set(w.W)
 
+    print("Updating `b_hist`...")
     if b_hist is not None:
         b_hist = b_hist.at[i].set(w.B)
 
+    print("Compiling `train_one_step`...")
     return (
         key,
         w,
@@ -153,7 +178,7 @@ def train_one_step(
     )
 
 
-@jit
+@jit(6, 7, 8, 9, 10)
 def train_contiguous(
     key: Array,
     w: Weights,
@@ -165,10 +190,13 @@ def train_contiguous(
     ndim: int,
     forward_pass: ForwardPass,
     optimizer: Optimizer,
-    how_many_iterations: UInt16[Array, ""],
+    how_many_iterations: int,
 ) -> TrainOneStepOutput:
 
-    def fold(i: UInt16[Array, ""], package: TrainOneStepOutput) -> TrainOneStepOutput:
+    @jaxtyped(typechecker=beartype)
+    def fold(i: Int64[Array, ""], package: TrainOneStepOutput) -> TrainOneStepOutput:
+
+        print("Iterating in `train_contiguous`...")
 
         (
             key,
@@ -205,8 +233,10 @@ def train_contiguous(
             i,
         )
 
+    n_layers = layers(w)
+
     # NOTE: `fori_loop` does not unroll! (this is good)
-    return fori_loop(
+    y = fori_loop(
         0,
         how_many_iterations,
         fold,
@@ -215,18 +245,42 @@ def train_contiguous(
             w,
             opt_state,
             opt_params,
-            jnp.empty([how_many_iterations], dtype=jnp.float32),
-            jnp.empty([how_many_iterations], dtype=jnp.float32),
-            jnp.empty([how_many_iterations], dtype=jnp.uint16),
-            jnp.empty([how_many_iterations], dtype=jnp.bool),
-            jnp.empty([how_many_iterations], dtype=jnp.float32),
-            jnp.empty([how_many_iterations], dtype=jnp.float32),
-            jnp.empty([how_many_iterations], dtype=jnp.float32),
+            jnp.empty(
+                [how_many_iterations],
+                dtype=jnp.float32,
+            ),
+            jnp.empty(
+                [how_many_iterations, n_layers, ndim, ndim + 1],
+                dtype=jnp.float32,
+            ),
+            jnp.empty(
+                [how_many_iterations, n_layers, ndim],
+                dtype=jnp.uint16,
+            ),
+            jnp.empty(
+                [how_many_iterations, n_layers, ndim],
+                dtype=jnp.bool,
+            ),
+            jnp.empty(
+                [how_many_iterations],
+                dtype=jnp.float32,
+            ),
+            jnp.empty(
+                [how_many_iterations, n_layers, ndim, ndim],
+                dtype=jnp.float32,
+            ),
+            jnp.empty(
+                [how_many_iterations, n_layers, ndim],
+                dtype=jnp.float32,
+            ),
         ),
     )
 
+    print("Compiling `train_contiguous`...")
+    return y
 
-@jit
+
+@jit(6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)
 def train_percentages(
     key: Array,
     w: Weights,
@@ -238,21 +292,31 @@ def train_percentages(
     ndim: int,
     forward_pass: ForwardPass,
     optimizer: Optimizer,
-    how_many_iterations: UInt16[Array, ""],
+    how_many_iterations: int,
+    track_losses: bool = True,
+    track_weight_distances: bool = True,
+    track_permutation_indices: bool = True,
+    track_permutation_flips: bool = True,
+    track_opt_params_hist: bool = True,
+    track_w_hist: bool = True,
+    track_b_hist: bool = True,
 ) -> Tuple[
     Optional[Float32[Array, "n_iter"]],
-    Optional[Float64[Array, "n_iter layers n_out n_in+1"]],
+    Optional[Float32[Array, "n_iter layers n_out n_in+1"]],
     Optional[UInt16[Array, "n_iter layers n_out"]],
     Optional[Bool[Array, "n_iter layers n_out"]],
-    Optional[PyTree[Float64[Array, "n_iter"]]],
-    Optional[Float64[Array, "n_iter layers n_out n_in"]],
-    Optional[Float64[Array, "n_iter layers n_out"]],
+    Optional[PyTree[Float32[Array, "n_iter"]]],
+    Optional[Float32[Array, "n_iter layers n_out n_in"]],
+    Optional[Float32[Array, "n_iter layers n_out"]],
 ]:
 
     pct_size = how_many_iterations // 100
-    assert pct_size * 100 == how_many_iterations  # i.e., cleanly divisible
+    assert (
+        pct_size * 100 == how_many_iterations
+    ), f"`how_many_iterations` in `train_percentages` must be a multiple of 100, but it was {how_many_iterations}"
 
-    def fold(i: UInt16[Array, ""], package: TrainOneStepOutput) -> TrainOneStepOutput:
+    @jaxtyped(typechecker=beartype)
+    def fold(i: Int64[Array, ""], package: TrainOneStepOutput) -> TrainOneStepOutput:
 
         (
             key,
@@ -309,7 +373,7 @@ def train_percentages(
         if b_hist is not None:
             b_hist.at[i].set(pct_b_hist)
 
-        debug.print("{j}%", j=(i + 1))
+        debug.print("{j}%", j=(i + 1), ordered=True)
 
         return (
             key,
@@ -324,6 +388,8 @@ def train_percentages(
             w_hist,
             b_hist,
         )
+
+    n_layers = layers(w)
 
     # NOTE: `fori_loop` does not unroll! (this is good)
     (
@@ -347,16 +413,66 @@ def train_percentages(
             w,
             opt_state,
             opt_params,
-            losses,
-            weight_distances,
-            permutation_indices,
-            permutation_flips,
-            opt_params_hist,
-            w_hist,
-            b_hist,
+            (
+                jnp.empty(
+                    [how_many_iterations],
+                    dtype=jnp.float32,
+                )
+                if track_losses
+                else None
+            ),
+            (
+                jnp.empty(
+                    [how_many_iterations, n_layers, ndim, ndim + 1],
+                    dtype=jnp.float32,
+                )
+                if track_weight_distances
+                else None
+            ),
+            (
+                jnp.empty(
+                    [how_many_iterations, n_layers, ndim],
+                    dtype=jnp.uint16,
+                )
+                if track_permutation_indices
+                else None
+            ),
+            (
+                jnp.empty(
+                    [how_many_iterations, n_layers, ndim],
+                    dtype=jnp.bool,
+                )
+                if track_permutation_flips
+                else None
+            ),
+            (
+                jnp.empty(
+                    [how_many_iterations],
+                    dtype=jnp.float32,
+                )
+                if track_opt_params_hist
+                else None
+            ),
+            (
+                jnp.empty(
+                    [how_many_iterations, n_layers, ndim, ndim],
+                    dtype=jnp.float32,
+                )
+                if track_w_hist
+                else None
+            ),
+            (
+                jnp.empty(
+                    [how_many_iterations, n_layers, ndim],
+                    dtype=jnp.float32,
+                )
+                if track_b_hist
+                else None
+            ),
         ),
     )
 
+    print("Compiling `train_percentages`...")
     return (
         losses,
         weight_distances,
@@ -368,24 +484,32 @@ def train_percentages(
     )
 
 
-@jit
+# @jit(1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 15, 16, 17, 18, 19)
+@jaxtyped(typechecker=beartype)
 def run(
     key: Array,
-    ndim: int = 3,
-    batch: int = 1,
-    layers: int = 2,
+    ndim,
+    batch,
+    layers,
     nonlinearity: Callable[[Float32[Array, "*n"]], Float32[Array, "*n"]] = jnn.gelu,
     optim: ModuleType = import_module("metaoptimizer.optimizers.sgd"),
     training_steps: int = 100000,
-    subdir: List[str] = ["logs"],
+    subdir: Tuple = ("logs",),
     convergence_only: bool = False,
     power: Float32[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
     lr: Float64[Array, ""] = jnp.array(0.01, dtype=jnp.float64),
     initial_distance: Float64[Array, ""] = jnp.array(0.1, dtype=jnp.float64),
     prefix: str = "",
+    track_losses: bool = True,
+    track_weight_distances: bool = True,
+    track_permutation_indices: bool = True,
+    track_permutation_flips: bool = True,
+    track_opt_params_hist: bool = True,
+    track_w_hist: bool = True,
+    track_b_hist: bool = True,
 ) -> None:
 
-    debug.print(prefix + "Setting up the model architecture...")
+    print(prefix + "Setting up the model architecture...")
 
     k1, k2 = jrnd.split(key)
 
@@ -432,11 +556,11 @@ def run(
             jnp.empty([training_steps, ndim], dtype=bool)
             for _ in range(nonterminal_layers)
         ]
-        opt_params_hist: List[PyTree[Float64[Array, ""]]] = []
-        w_hist: List[PyTree[Float64[Array, "..."]]] = []
-        w_ideal_hist: List[PyTree[Float64[Array, "..."]]] = []
+        opt_params_hist: List[PyTree[Float32[Array, ""]]] = []
+        w_hist: List[PyTree[Float32[Array, "..."]]] = []
+        w_ideal_hist: List[PyTree[Float32[Array, "..."]]] = []
 
-    debug.print(prefix + "Compiling the training loop...")
+    print(prefix + "Compiling the training loop...")
 
     # Training loop:
     t0 = time()
@@ -461,9 +585,9 @@ def run(
         optimizer,
         training_steps,
     )
-    debug.print(prefix + f"Done in {int(time() - t0)} seconds")
+    print(prefix + f"Done in {int(time() - t0)} seconds")
 
-    debug.print(prefix + "Saving...")
+    print(prefix + "Saving...")
 
     cwd = os.getcwd()
     cwd = os.path.join(cwd, *subdir)
@@ -471,6 +595,7 @@ def run(
 
     @jaxtyped(typechecker=beartype)
     def save(array: Array, *args) -> None:
+        print("Saving `{path(*args)}`...")
         io_callback(
             lambda x: jnp.save(
                 path(*args),

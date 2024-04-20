@@ -697,7 +697,7 @@ def prop_optim(
     power: Float[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
 ):
     shapes = tuple([NDIM for _ in range(LAYERS + 1)])
-    w = feedforward.init(shapes, jrnd.PRNGKey(42), True)
+    w = feedforward.init(shapes, jrnd.PRNGKey(42), False)
     key = jrnd.PRNGKey(42)
     orig_x = jrnd.normal(key, [BATCH, NDIM], dtype=jnp.float32)
     forward_pass = feedforward.run

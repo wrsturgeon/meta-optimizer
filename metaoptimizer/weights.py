@@ -1,8 +1,9 @@
 from metaoptimizer.jit import jit
 
+from beartype import beartype
 from beartype.typing import Callable, List, NamedTuple
 from jax import numpy as jnp
-from jaxtyping import Array, Float32, Float64, UInt16
+from jaxtyping import jaxtyped, Array, Float32, Float64
 
 
 class Weights(NamedTuple):
@@ -10,13 +11,13 @@ class Weights(NamedTuple):
     B: Float64[Array, "n_layers n_out"]
 
 
-@jit()
-def layers(w: Weights) -> UInt16[Array, ""]:
+@jaxtyped(typechecker=beartype)
+def layers(w: Weights) -> int:
     assert jnp.issubdtype(w.W.dtype, jnp.float64)
     assert jnp.issubdtype(w.B.dtype, jnp.float64)
     n = w.W.shape[0]
     assert n == w.B.shape[0]
-    return jnp.array(n, dtype=jnp.uint16)
+    return n
 
 
 @jit()

@@ -218,6 +218,8 @@ def find_permutation(
     assert rowwise.shape == (n, n), f"{rowwise.shape} =/= {(n, n)}"
 
     permutation, _ = find_permutation_rec(actual, ideal, rowwise, flip)
+
+    print(f"Compiling {actual.shape}-{ideal.shape} `find_permutation`...")
     return permutation
 
 
@@ -272,23 +274,12 @@ def layer_distance(
     # Calculate loss differentiably:
     ideal = permute_hidden_layers(ideal, permutations)
     wb_a = wb(actual)
-    print("wb_a")
-    print(wb_a)
     wb_i = wb(ideal)
-    print("wb_i")
-    print(wb_i)
     std_a = jnp.sqrt(jnp.sum(jnp.square(stop_gradient(wb_a)), axis=-1, keepdims=True))
-    print("std_a")
-    print(std_a)
     std_i = jnp.sqrt(jnp.sum(jnp.square(stop_gradient(wb_i)), axis=-1, keepdims=True))
-    print("std_i")
-    print(std_i)
     normalized_a = wb_a / (std_a + 1e-8)
-    print("normalized_a")
-    print(normalized_a)
     normalized_i = wb_i / (std_i + 1e-8)
-    print("normalized_i")
-    print(normalized_i)
     L = jnp.sum(jnp.abs(normalized_i - normalized_a))
 
+    print(f"Compiling `layer_distance`...")
     return L, permutations

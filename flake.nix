@@ -61,7 +61,7 @@
               ];
             in
             ''
-              export NONJIT=1
+              # export NONJIT=1
               rm -fr result
               ${python} -m black --check .
               ${python} -m coverage run --omit='/nix/*' -m pytest -Werror test.py
