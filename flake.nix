@@ -1,11 +1,19 @@
 {
   description = "Quantifying performance of machine-learning optimizers like RMSProp & Adam.";
   inputs = {
+    check-and-compile = {
+      inputs = {
+        flake-utils.follows = "flake-utils";
+        nixpkgs.follows = "nixpkgs";
+      };
+      url = "github:wrsturgeon/check-and-compile";
+    };
     flake-utils.url = "github:numtide/flake-utils";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   };
   outputs =
     {
+      check-and-compile,
       flake-utils,
       nixpkgs,
       self,
@@ -20,36 +28,39 @@
         pypkgs = pkgs.python311Packages;
         # TODO: Use pylyzer when 1.76.0+ supported
         default-pkgs =
-          p:
-          with p;
+          p: py:
+          with py;
           [
             beartype
             jaxtyping
             matplotlib
           ]
           ++ [
+            (check-and-compile.lib.with-pkgs p py)
             (jax.overridePythonAttrs (
               old:
               old
               // {
                 doCheck = false;
-                propagatedBuildInputs = old.propagatedBuildInputs ++ [ p.jaxlib-bin ];
+                propagatedBuildInputs = old.propagatedBuildInputs ++ [ py.jaxlib-bin ];
               }
             ))
           ];
         check-pkgs =
-          p: with p; [
+          p: py: with py; [
             hypothesis
             pytest
           ];
         ci-pkgs =
-          p: with p; [
+          p: py: with py; [
             black
             coverage
           ];
-        dev-pkgs = p: with p; [ python-lsp-server ];
-        lookup-pkg-sets = ps: p: builtins.concatMap (f: f p) ps;
-        python-with = ps: "${pypkgs.python.withPackages (lookup-pkg-sets ps)}/bin/python";
+        dev-pkgs = p: py: with py; [ python-lsp-server ];
+        lookup-pkg-sets =
+          ps: p: py:
+          builtins.concatMap (f: f p py) ps;
+        python-with = ps: "${pypkgs.python.withPackages (lookup-pkg-sets ps pkgs)}/bin/python";
         instantiate-default = s: if s == "default" then pname else s;
         apps = {
           ci =
@@ -61,7 +72,6 @@
               ];
             in
             ''
-              # export NONJIT=1
               rm -fr result
               ${python} -m black --check .
               ${python} -m coverage run --omit='/nix/*' -m pytest -Werror test.py
@@ -127,7 +137,7 @@
             check-pkgs
             ci-pkgs
             dev-pkgs
-          ] pypkgs;
+          ] pkgs pypkgs;
         };
       }
     );

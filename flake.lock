@@ -1,5 +1,28 @@
 {
   "nodes": {
+    "check-and-compile": {
+      "inputs": {
+        "flake-utils": [
+          "flake-utils"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1713909392,
+        "narHash": "sha256-g9uFI97GxoYVTomav5zRvPFMwIs+Jv4Rgc1iwjRe2i8=",
+        "owner": "wrsturgeon",
+        "repo": "check-and-compile",
+        "rev": "bf9318c81096ad932e3ad79a8632f35bfd66c0b9",
+        "type": "github"
+      },
+      "original": {
+        "owner": "wrsturgeon",
+        "repo": "check-and-compile",
+        "type": "github"
+      }
+    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -36,6 +59,7 @@
     },
     "root": {
       "inputs": {
+        "check-and-compile": "check-and-compile",
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs"
       }

@@ -1,9 +1,10 @@
-from metaoptimizer.jit import jit
 from metaoptimizer.weights import layers, wb, Weights
 
 from beartype import beartype
 from beartype.typing import List, Optional, Tuple
+from check_and_compile import check_and_compile
 from jax import nn as jnn, numpy as jnp, vmap, ShapeDtypeStruct
+from jax.errors import TracerBoolConversionError
 from jax.experimental.checkify import check
 from jax.lax import cond, fori_loop, stop_gradient
 from jax.tree_util import tree_map, tree_reduce
@@ -19,6 +20,7 @@ from jaxtyping import (
     UInt16,
 )
 import operator
+import sys
 from typing import NamedTuple
 
 
@@ -29,7 +31,7 @@ class Permutation(NamedTuple):
     flip: Bool[Array, "n"]
 
 
-@jit(2)
+@check_and_compile(2)
 def permute(
     x: Shaped[Array, "*n"],
     permutation: Permutation,
@@ -46,7 +48,7 @@ def permute(
     return jnp.where(flip, -permuted, permuted)
 
 
-@jit()
+@check_and_compile()
 def permute_hidden_layers(
     w: Weights,
     ps: List[Permutation],
@@ -64,7 +66,7 @@ def permute_hidden_layers(
     return Weights(W=W, B=B)
 
 
-@jit(2)
+@check_and_compile(2)
 def cut_axes(
     x: Shaped[Array, "..."],
     indices: UInt16[Array, "n_indices"],
@@ -86,7 +88,7 @@ def cut_axes(
     return out
 
 
-@jit()
+@check_and_compile()
 def find_permutation_rec(
     actual: Float32[Array, "n ..."],
     ideal: Float32[Array, "n ..."],
@@ -179,7 +181,7 @@ def find_permutation_rec(
     return Permutation(indices=r_indices, flip=r_flip), r_loss
 
 
-@jit()
+@check_and_compile()
 def find_permutation(
     actual: Float32[Array, "n m"],
     ideal: Float32[Array, "n m"],
@@ -223,7 +225,8 @@ def find_permutation(
     return permutation
 
 
-@jit()
+# @check_and_compile()
+@jaxtyped(typechecker=beartype)
 def layer_distance(
     actual: Weights,
     ideal: Weights,
@@ -242,6 +245,15 @@ def layer_distance(
     should be entirely negligible.
     TODO: Investigate the above . . . if you have the compute to do so.
     """
+
+    try:
+        # Note: this `assert` (not `check`) will always fail under JIT compilation:
+        assert tree_reduce(
+            operator.and_, tree_map(lambda x: jnp.all(jnp.isfinite(x)), actual)
+        ), "`permutations.layer_distance` received non-finite weights"
+        # Problem is aggressive inlining: <https://github.com/google/jax/issues/7155>
+    except TracerBoolConversionError:
+        sys.exit("Please don't JIT-compile `permutations.layer_distance`!")
 
     n = layers(actual)
     assert layers(ideal) == n, f"{layers(ideal)} =/= {n}"
@@ -281,5 +293,4 @@ def layer_distance(
     normalized_i = wb_i / (std_i + 1e-8)
     L = jnp.sum(jnp.abs(normalized_i - normalized_a))
 
-    print(f"Compiling `layer_distance`...")
     return L, permutations

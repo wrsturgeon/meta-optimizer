@@ -1,11 +1,11 @@
 from metaoptimizer import feedforward, permutations, training
-from metaoptimizer.jit import jit
 from metaoptimizer.permutations import Permutation
 from metaoptimizer.training import ForwardPass, Optimizer
 from metaoptimizer.weights import layers, wb, Weights
 
 from beartype import beartype
 from beartype.typing import Callable, List, Optional, Tuple, TypeAlias
+from check_and_compile import check_and_compile
 from importlib import import_module
 from jax import debug, nn as jnn, numpy as jnp, random as jrnd
 from jax.experimental import io_callback
@@ -30,7 +30,8 @@ from time import time
 from types import ModuleType
 
 
-@jit(6, 7, 8, 9)
+# @check_and_compile(6, 7, 8, 9)
+@jaxtyped(typechecker=beartype)
 def step(
     key: Array,
     w: Weights,
@@ -68,7 +69,6 @@ def step(
         w_ideal,
         power,
     )
-    print("Compiling `step`...")
     return key, w, opt_state, opt_params, permutation, L
 
 
@@ -88,7 +88,8 @@ TrainOneStepOutput: TypeAlias = Tuple[
 ]
 
 
-@jit(6, 7, 8, 9)
+# @check_and_compile(6, 7, 8, 9)
+@jaxtyped(typechecker=beartype)
 def train_one_step(
     key: Array,
     w: Weights,
@@ -162,7 +163,6 @@ def train_one_step(
     if b_hist is not None:
         b_hist = b_hist.at[i].set(w.B)
 
-    print("Compiling `train_one_step`...")
     return (
         key,
         w,
@@ -178,7 +178,8 @@ def train_one_step(
     )
 
 
-@jit(6, 7, 8, 9, 10)
+# @check_and_compile(6, 7, 8, 9, 10)
+@jaxtyped(typechecker=beartype)
 def train_contiguous(
     key: Array,
     w: Weights,
@@ -276,11 +277,11 @@ def train_contiguous(
         ),
     )
 
-    print("Compiling `train_contiguous`...")
     return y
 
 
-@jit(6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)
+# @check_and_compile(6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)
+@jaxtyped(typechecker=beartype)
 def train_percentages(
     key: Array,
     w: Weights,
@@ -392,6 +393,7 @@ def train_percentages(
     n_layers = layers(w)
 
     # NOTE: `fori_loop` does not unroll! (this is good)
+    # BUT it compiles its argument without telling you
     (
         key,
         w,
@@ -472,7 +474,6 @@ def train_percentages(
         ),
     )
 
-    print("Compiling `train_percentages`...")
     return (
         losses,
         weight_distances,
@@ -484,7 +485,7 @@ def train_percentages(
     )
 
 
-# @jit(1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 15, 16, 17, 18, 19)
+# @check_and_compile(1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 15, 16, 17, 18, 19)
 @jaxtyped(typechecker=beartype)
 def run(
     key: Array,
@@ -560,7 +561,7 @@ def run(
         w_hist: List[PyTree[Float32[Array, "..."]]] = []
         w_ideal_hist: List[PyTree[Float32[Array, "..."]]] = []
 
-    print(prefix + "Compiling the training loop...")
+    print(prefix + "Entering the training loop...")
 
     # Training loop:
     t0 = time()

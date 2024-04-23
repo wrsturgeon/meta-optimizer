@@ -1,7 +1,5 @@
 from os import environ
 
-# environ["NONJIT"] = "1"
-
 
 from metaoptimizer import (
     feedforward,

@@ -1,7 +1,6 @@
-from metaoptimizer.jit import jit
-
 from beartype import beartype
 from beartype.typing import Callable, List, NamedTuple
+from check_and_compile import check_and_compile
 from jax import numpy as jnp
 from jaxtyping import jaxtyped, Array, Float32, Float64
 
@@ -20,7 +19,7 @@ def layers(w: Weights) -> int:
     return n
 
 
-@jit()
+@check_and_compile()
 def wb(weights: Weights) -> Float32[Array, "n_layers n_out n_in_plus_1"]:
     assert weights.W.ndim == 3
     assert weights.B.ndim == 2
