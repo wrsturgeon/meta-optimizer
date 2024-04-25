@@ -41,6 +41,26 @@
         "type": "github"
       }
     },
+    "nixfmt": {
+      "inputs": {
+        "flake-utils": [
+          "flake-utils"
+        ]
+      },
+      "locked": {
+        "lastModified": 1713478555,
+        "narHash": "sha256-Sdhv/YQxvF6OJeEY+iyg3f2p6XCankrYQffsxMajnGs=",
+        "owner": "serokell",
+        "repo": "nixfmt",
+        "rev": "a8b578d124cfda7540957a2172f89aa12d99609f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "serokell",
+        "repo": "nixfmt",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1713714899,
@@ -61,6 +81,7 @@
       "inputs": {
         "check-and-compile": "check-and-compile",
         "flake-utils": "flake-utils",
+        "nixfmt": "nixfmt",
         "nixpkgs": "nixpkgs"
       }
     },

@@ -9,12 +9,17 @@
       url = "github:wrsturgeon/check-and-compile";
     };
     flake-utils.url = "github:numtide/flake-utils";
+    nixfmt = {
+      inputs.flake-utils.follows = "flake-utils";
+      url = "github:serokell/nixfmt";
+    };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   };
   outputs =
     {
       check-and-compile,
       flake-utils,
+      nixfmt,
       nixpkgs,
       self,
     }:
@@ -65,14 +70,19 @@
         apps = {
           ci =
             let
+              find = "${pkgs.findutils}/bin/find";
+              nixfmt-bin = "${nixfmt.packages.${system}.default}/bin/nixfmt";
               python = python-with [
                 default-pkgs
                 check-pkgs
                 ci-pkgs
               ];
+              rm = "${pkgs.coreutils}/bin/rm";
+              xargs = "${pkgs.findutils}/bin/xargs";
             in
             ''
-              rm -fr result
+              ${rm} -fr result
+              ${find} . -name '*.nix' | ${xargs} ${nixfmt-bin} --check
               ${python} -m black --check .
               ${python} -m coverage run --omit='/nix/*' -m pytest -Werror test.py
               ${python} -m coverage report -m --fail-under=100
