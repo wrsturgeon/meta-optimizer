@@ -12,7 +12,7 @@ import os
 KeyArray = UInt32[Array, "n_keys"]  # <https://github.com/google/jax/issues/12706>
 
 
-@check_and_compile(3)
+# @check_and_compile(3)
 def nonlinear(
     x: Float32[Array, "batch n_in"],
     w: Float64[Array, "n_out n_in"],
@@ -28,7 +28,7 @@ def nonlinear(
     return nl(z)
 
 
-@check_and_compile(2)
+# @check_and_compile(2)
 def run(
     weights: Weights,
     x: Float32[Array, "batch n_in"],
@@ -41,7 +41,6 @@ def run(
     return x
 
 
-# @check_and_compile(0, 2)
 @jaxtyped(typechecker=beartype)
 def init(sizes: Tuple, key: KeyArray, random_biases: bool) -> Weights:
     n = len(sizes)

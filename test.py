@@ -4,7 +4,6 @@ from os import environ
 from metaoptimizer import (
     feedforward,
     permutations,
-    rotations,
     training,
 )
 from metaoptimizer.optimizers import Optimizer
@@ -75,100 +74,11 @@ def no_flip(indices_list: Iterable[int]) -> Permutation:
     )
 
 
-@jaxtyped(typechecker=beartype)
-def prop_kabsch(to_be_rotated: Float[Array, "..."], target: Float[Array, "..."]):
-    assert to_be_rotated.shape == target.shape
-    norm1 = jla.norm(to_be_rotated)
-    norm2 = jla.norm(target)
-    if (
-        jnp.allclose(0, to_be_rotated)
-        or jnp.allclose(0, target)
-        or not (
-            jnp.all(jnp.isfinite(to_be_rotated))
-            and jnp.all(jnp.isfinite(target))
-            and jnp.isfinite(norm1)
-            and jnp.isfinite(norm2)
-        )
-    ):
-        return
-    to_be_rotated /= norm1
-    target /= norm2
-    R = rotations.kabsch(to_be_rotated, target)
-    rotated = to_be_rotated @ R
-    loss = jnp.abs(rotated - target)
-    assert jnp.all(loss < 0.01)
-
-
 NDIM = 3
 BATCH = 32
 LAYERS = 3
 EPOCHS = 1
 LR = jnp.array(0.001)
-
-
-@jaxtyped(typechecker=beartype)
-def test_kabsch_1():
-    eye = jnp.eye(1, 4).reshape(1, 1, 4)
-    actual = rotations.kabsch(eye, eye)
-    assert jnp.allclose(actual, jnp.eye(4, 4).reshape(1, 4, 4))
-
-
-@jaxtyped(typechecker=beartype)
-def test_kabsch_2():
-    prop_kabsch(
-        jnp.array([[[1, 0, 0, 0]]], dtype=jnp.float32),
-        jnp.array([[[0, 1, 0, 0]]], dtype=jnp.float32),
-    )
-
-
-@jaxtyped(typechecker=beartype)
-def test_kabsch_3():
-    prop_kabsch(jnp.ones([1, 1, 4]), jnp.ones([1, 1, 4]))
-
-
-@jaxtyped(typechecker=beartype)
-def test_kabsch_4():
-    prop_kabsch(jnp.ones([1, 1, 4]), jnp.array([[[0, 1, 1, 1]]], dtype=jnp.float32))
-
-
-@jaxtyped(typechecker=beartype)
-def test_kabsch_5():
-    prop_kabsch(
-        to_be_rotated=jnp.array([[[1, 1, 1, 1]]], dtype=jnp.float32),
-        target=jnp.array(
-            [[[9.223372e18, 9.223372e18, 9.223372e18, 9.223372e18]]], dtype=jnp.float32
-        ),
-    )
-
-
-@given(
-    hnp.arrays(dtype=jnp.float32, shape=(1, 1, 4)),
-    hnp.arrays(dtype=jnp.float32, shape=(1, 1, 4)),
-)
-@jaxtyped(typechecker=beartype)
-def test_kabsch_prop(to_be_rotated: ArrayLike, target: ArrayLike):
-    prop_kabsch(jnp.array(to_be_rotated), jnp.array(target))
-
-
-@jaxtyped(typechecker=beartype)
-def test_rotate_and_compare_1():
-    ideal = jnp.eye(5, 5)[jnp.newaxis]
-    actual = jnp.array(
-        [
-            [
-                [0, 0, 1, 0, 0],
-                [1, 0, 0, 0, 0],
-                [0, 0, 0, 1, 0],
-                [0, 1, 0, 0, 0],
-                [0, 0, 0, 0, 1],
-            ]
-        ],
-        dtype=jnp.float32,
-    )
-    norm, rotated, R = rotations.rotate_and_compare(actual, ideal)
-    assert jnp.allclose(norm, 0)
-    assert jnp.allclose(rotated, ideal)
-    assert jnp.allclose(R, actual.transpose(0, 2, 1))
 
 
 @given(hnp.arrays(dtype=jnp.float32, shape=(3, 3)))
@@ -194,42 +104,6 @@ def test_feedforward_id_prop(np_x: ArrayLike):
 
 
 # TODO: test varying dimensionality across layers
-
-
-@jaxtyped(typechecker=beartype)
-def prop_permutation_conjecture(
-    r1: Float[Array, "batch points ndim"],
-    r2: Float[Array, "batch points ndim"],
-):
-    # these lines (this comment +/- 1) are effectively just
-    # generating a random rotation matrix stored in `R`
-    R = rotations.kabsch(r1, r2)
-    assert R.shape[0] == 1
-    R = R[0]
-
-    # now that we have a rotation matrix,
-    # can we obtain the closest permutation matrix
-    # by simply taking the maximum along each row/column?
-    # test whether row/column methods match, which would imply the above:
-    Rabs = jnp.abs(R)
-    outputs = []
-    for axis in range(R.ndim):
-        outputs.append(
-            jnn.one_hot(jnp.argmax(Rabs, axis=axis), R.shape[axis], axis=axis)
-        )
-        assert outputs[-1].shape == R.shape
-    for output in outputs:
-        for cmp in outputs:
-            assert jnp.allclose(output, cmp)
-
-
-# Turns out the above does not hold:
-@jaxtyped(typechecker=beartype)
-def test_permutation_conjecture_disproven():
-    r1 = jnp.array([[[0.21653588, -0.6419788, 1.1067219]]], dtype=jnp.float32)
-    r2 = jnp.array([[[-0.9220991, 2.6091485, -1.3119074]]], dtype=jnp.float32)
-    with pytest.raises(AssertionError):
-        prop_permutation_conjecture(r1, r2)
 
 
 @jaxtyped(typechecker=beartype)

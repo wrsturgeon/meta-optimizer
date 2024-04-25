@@ -2,6 +2,7 @@ from metaoptimizer.optimizers import inverse_sigmoid
 
 from beartype import beartype
 from beartype.typing import NamedTuple, Tuple
+from check_and_compile import check_and_compile
 from jax import nn as jnn, numpy as jnp
 from jax.tree_util import tree_map
 from jaxtyping import jaxtyped, Array, Float, PyTree
@@ -34,7 +35,7 @@ def init(initial_weights: PyTree[Float[Array, "..."]], p: Params) -> State:
     return State()
 
 
-@jaxtyped(typechecker=beartype)
+# @check_and_compile()
 def update(
     p: Params,
     s: State,

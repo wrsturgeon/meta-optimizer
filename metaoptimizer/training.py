@@ -24,7 +24,7 @@ ForwardPass = Callable[
 OPTIMIZER_LR = jnp.array(0.25, dtype=jnp.float64)
 
 
-@check_and_compile(1)
+# @check_and_compile(1)
 def loss(
     weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
@@ -41,10 +41,18 @@ def loss(
     return jnp.sum(Ln)
 
 
-loss_and_grad = check_and_compile()(value_and_grad(loss))
+# @check_and_compile(1)
+def loss_and_grad(
+    weights: PyTree[Float64[Array, "..."]],
+    forward_pass: ForwardPass,
+    inputs: Float32[Array, "batch ndim_in"],
+    ground_truth: Float32[Array, "batch ndim_out"],
+    power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
+) -> Tuple[PyTree[Float64[Array, "..."]], Float32[Array, ""]]:
+    return value_and_grad(loss)(weights, forward_pass, inputs, ground_truth, power)
 
 
-@check_and_compile(1, 4)
+# @check_and_compile(1, 4)
 def step(
     weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
@@ -66,7 +74,7 @@ def step(
     return weights_adjusted, opt_state_adjusted, L
 
 
-@check_and_compile(1, 4)
+# @check_and_compile(1, 4)
 def update_and_retest(
     weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
@@ -90,7 +98,7 @@ def update_and_retest(
     )
 
 
-@check_and_compile(2)
+# @check_and_compile(2)
 def slope_away_from_local_minimum(
     opt_params: PyTree[Float64[Array, ""]],
     opt_state: PyTree[Float64[Array, "..."]],
@@ -110,7 +118,7 @@ def slope_away_from_local_minimum(
     )
 
 
-@check_and_compile(1, 4)
+# @check_and_compile(1, 4)
 def step_downhill(
     weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
@@ -166,7 +174,6 @@ def step_downhill(
 
 
 # @check_and_compile(2)
-@jaxtyped(typechecker=beartype)
 def opt_step_global(
     opt_params: PyTree[Float64[Array, ""]],
     opt_state: PyTree[Float64[Array, "..."]],
@@ -182,22 +189,20 @@ def opt_step_global(
         List[Permutation],
     ],
 ]:
-    try:
-        assert tree_reduce(
-            operator.and_,
-            tree_map(
-                lambda x: jnp.all(jnp.isfinite(x)),
-                weights,
-            ),
-        ), "Non-finite input"
-    except TracerBoolConversionError:
-        sys.exit("Please don't JIT-compile `training.opt_step_global`!")
+    # try:
+    #     assert tree_reduce(
+    #         operator.and_,
+    #         tree_map(
+    #             lambda x: jnp.all(jnp.isfinite(x)),
+    #             weights,
+    #         ),
+    #     ), "Non-finite input"
+    # except TracerBoolConversionError:
+    #     sys.exit("Please don't JIT-compile `training.opt_step_global`!")
 
-    print("Calling `optim_parameterized`...")
-    opt_state_adjusted, weights_adjusted = check_and_compile()(optim_parameterized)(
+    opt_state_adjusted, weights_adjusted = optim_parameterized(
         opt_params, opt_state, weights, dLdw
     )
-    print("Calling `permutations.layer_distance`...")
     L, perm = permutations.layer_distance(
         actual=weights_adjusted,
         ideal=global_minimum,
@@ -206,7 +211,6 @@ def opt_step_global(
 
 
 # @check_and_compile(1, 4)
-@jaxtyped(typechecker=beartype)
 def step_global(
     weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
@@ -234,23 +238,12 @@ def step_global(
     #     ), "Non-finite input"
     # except TracerBoolConversionError:
     #     sys.exit("Please don't JIT-compile `training.step_global`!")
-    assert tree_reduce(
-        operator.and_,
-        tree_map(
-            lambda x: jnp.all(jnp.isfinite(x)),
-            weights,
-        ),
-    ), "Non-finite input"
 
-    print("Calling `loss_and_grad`...")
     L, dLdw = loss_and_grad(weights, forward_pass, inputs, ground_truth, power)
-    print("Calling `grad`...")
-    dLdo, (opt_state_adjusted, weights_adjusted, perm) = check_and_compile()(
-        grad(
-            opt_step_global,
-            has_aux=True,
-        )
-    )(
+    g = grad(opt_step_global, has_aux=True)
+    # tragic we can't compile the above without wasting hours
+    # TODO: look into custom backprop?
+    dLdo, (opt_state_adjusted, weights_adjusted, perm) = g(
         opt_params,
         opt_state,
         optim_parameterized,
@@ -258,7 +251,6 @@ def step_global(
         dLdw,
         global_minimum,
     )
-    print("Stepping parameters...")
     opt_params_adjusted: PyTree[Float64[Array, "..."]] = tree_map(
         lambda w, d: w - OPTIMIZER_LR * d,
         opt_params,

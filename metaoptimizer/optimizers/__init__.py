@@ -1,5 +1,6 @@
 from beartype import beartype
 from beartype.typing import Callable, Tuple
+from check_and_compile import check_and_compile
 from jax import numpy as jnp
 from jax.experimental.checkify import check
 from jaxtyping import jaxtyped, Array, Float, PyTree
@@ -17,7 +18,7 @@ Optimizer = Callable[
 ]
 
 
-@jaxtyped(typechecker=beartype)
+# @check_and_compile()
 def inverse_sigmoid(x: Float[Array, "*n"]) -> Float[Array, "*n"]:
     # https://stackoverflow.com/questions/10097891/inverse-logistic-sigmoid-function
     check(

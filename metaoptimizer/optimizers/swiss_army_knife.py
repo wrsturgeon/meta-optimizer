@@ -2,6 +2,7 @@ from metaoptimizer.optimizers import inverse_sigmoid
 
 from beartype import beartype
 from beartype.typing import NamedTuple, Tuple, Union
+from check_and_compile import check_and_compile
 from jax import nn as jnn, numpy as jnp
 from jax.experimental.checkify import check
 from jax.tree_util import tree_map, tree_reduce
@@ -76,7 +77,7 @@ def flatten_quotient(
     return 1 + (k * (x - 1))
 
 
-@jaxtyped(typechecker=beartype)
+# @check_and_compile()
 def update(
     p: Params,
     s: State,

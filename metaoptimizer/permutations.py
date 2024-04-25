@@ -31,7 +31,7 @@ class Permutation(NamedTuple):
     flip: Bool[Array, "n"]
 
 
-@check_and_compile(2)
+# @check_and_compile(2)
 def permute(
     x: Shaped[Array, "*n"],
     permutation: Permutation,
@@ -48,7 +48,7 @@ def permute(
     return jnp.where(flip, -permuted, permuted)
 
 
-@check_and_compile()
+# @check_and_compile()
 def permute_hidden_layers(
     w: Weights,
     ps: List[Permutation],
@@ -66,7 +66,7 @@ def permute_hidden_layers(
     return Weights(W=W, B=B)
 
 
-@check_and_compile(2)
+# @check_and_compile(2)
 def cut_axes(
     x: Shaped[Array, "..."],
     indices: UInt16[Array, "n_indices"],
@@ -88,7 +88,7 @@ def cut_axes(
     return out
 
 
-@check_and_compile()
+# @check_and_compile()
 def find_permutation_rec(
     actual: Float32[Array, "n ..."],
     ideal: Float32[Array, "n ..."],
@@ -175,13 +175,13 @@ def find_permutation_rec(
     r_flip: Bool[Array, "n"] = jnp.concat([flip[0, argmin, jnp.newaxis], r_flip])
     assert r_flip.shape == (n,), f"{r_flip.shape} =/= {(n,)}"
 
-    print(
-        f"Compiling {actual.shape}-{ideal.shape}-{rowwise.shape}-{flip.shape} permutation-cruncher..."
-    )
+    # print(
+    #     f"Compiling {actual.shape}-{ideal.shape}-{rowwise.shape}-{flip.shape} permutation-cruncher..."
+    # )
     return Permutation(indices=r_indices, flip=r_flip), r_loss
 
 
-@check_and_compile()
+# @check_and_compile()
 def find_permutation(
     actual: Float32[Array, "n m"],
     ideal: Float32[Array, "n m"],
@@ -221,12 +221,11 @@ def find_permutation(
 
     permutation, _ = find_permutation_rec(actual, ideal, rowwise, flip)
 
-    print(f"Compiling {actual.shape}-{ideal.shape} `find_permutation`...")
+    # print(f"Compiling {actual.shape}-{ideal.shape} `find_permutation`...")
     return permutation
 
 
 # @check_and_compile()
-@jaxtyped(typechecker=beartype)
 def layer_distance(
     actual: Weights,
     ideal: Weights,
@@ -246,14 +245,14 @@ def layer_distance(
     TODO: Investigate the above . . . if you have the compute to do so.
     """
 
-    try:
-        # Note: this `assert` (not `check`) will always fail under JIT compilation:
-        assert tree_reduce(
-            operator.and_, tree_map(lambda x: jnp.all(jnp.isfinite(x)), actual)
-        ), "`permutations.layer_distance` received non-finite weights"
-        # Problem is aggressive inlining: <https://github.com/google/jax/issues/7155>
-    except TracerBoolConversionError:
-        sys.exit("Please don't JIT-compile `permutations.layer_distance`!")
+    # try:
+    #     # Note: this `assert` (not `check`) will always fail under JIT compilation:
+    #     assert tree_reduce(
+    #         operator.and_, tree_map(lambda x: jnp.all(jnp.isfinite(x)), actual)
+    #     ), "`permutations.layer_distance` received non-finite weights"
+    #     # Problem is aggressive inlining: <https://github.com/google/jax/issues/7155>
+    # except TracerBoolConversionError:
+    #     sys.exit("Please don't JIT-compile `permutations.layer_distance`!")
 
     n = layers(actual)
     assert layers(ideal) == n, f"{layers(ideal)} =/= {n}"
