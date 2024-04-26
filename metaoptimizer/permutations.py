@@ -4,14 +4,12 @@ from beartype import beartype
 from beartype.typing import List, Optional, Tuple
 from check_and_compile import check_and_compile
 from jax import nn as jnn, numpy as jnp, vmap, ShapeDtypeStruct
-from jax.errors import TracerBoolConversionError
 from jax.experimental.checkify import check
 from jax.lax import cond, fori_loop, stop_gradient
 from jax.tree_util import tree_map, tree_reduce
 from jaxtyping import (
     jaxtyped,
     Array,
-    Bool,
     Float32,
     Float64,
     Int,
@@ -24,42 +22,30 @@ import sys
 from typing import NamedTuple
 
 
-class Permutation(NamedTuple):
-    """Description of a permutation on some tensor (without explicitly carrying around that tensor)."""
-
-    indices: UInt32[Array, "n"]
-    flip: Bool[Array, "n"]
-
-
-# @check_and_compile(2)
+# @check_and_compile()
 @jaxtyped(typechecker=beartype)
 def permute_vector(
     x: Shaped[Array, "n"],
-    permutation: Permutation,
-    axis: int,
+    permutation: UInt32[Array, "n"],
 ):
-    assert (
-        permutation.indices.shape == permutation.flip.shape == x.shape
-    ), f"{permutation.indices.shape} =/= {permutation.flip.shape} =/= {x.shape}"
-    permuted = x[permutation.indices]
-    return jnp.where(permutation.flip, -permuted, permuted)
+    return x[permutation]
 
 
 # @check_and_compile(2)
 @jaxtyped(typechecker=beartype)
 def permute(
-    x: Shaped[Array, "*n"],
-    permutation: Permutation,
+    x: Shaped[Array, "*shapes"],
+    permutation: UInt32[Array, "n"],
     axis: int,
-) -> Shaped[Array, "*n"]:
-    return jnp.apply_along_axis(lambda z: permute_vector(z, permutation, axis), axis, x)
+) -> Shaped[Array, "*shapes"]:
+    return jnp.apply_along_axis(lambda z: permute_vector(z, permutation), axis, x)
 
 
 # @check_and_compile()
 @jaxtyped(typechecker=beartype)
 def permute_hidden_layers(
     w: Weights,
-    ps: List[Permutation],
+    ps: List[UInt32[Array, "n"]],
 ) -> Weights:
     """Permute hidden layers' columns locally without changing the output of a network."""
     n = len(ps)
@@ -103,13 +89,12 @@ def find_permutation_rec(
     actual: Float32[Array, "n ..."],
     ideal: Float32[Array, "n ..."],
     rowwise: Float32[Array, "n n"],
-    flip: Bool[Array, "n n"],
-) -> Tuple[Permutation, Float32[Array, ""]]:
+) -> Tuple[UInt32[Array, "n"], Float32[Array, ""]]:
     # Note that, in the last two matrices above,
     # the 1st axis represents `_actual`, and
     # the 2nd axis represents `_ideal`, so
-    # `rowwise[i, j, k]` is the L1 distance between
-    # `actual[i]` and `ideal[j]` (w/ the former flipped iff `k`).
+    # `rowwise[i, j]` is the L1 distance between
+    # `actual[i]` and `ideal[j]`.
     # Note, further, that we're permuting `actual`,
     # so we should really only ever care about `actual[n]`
     # where `n` is the recursive depth thus far.
@@ -124,71 +109,54 @@ def find_permutation_rec(
 
     if n == 0:
         return (
-            Permutation(
-                indices=jnp.array([], dtype=jnp.uint32),
-                flip=jnp.array([], dtype=jnp.bool),
-            ),
+            jnp.array([], dtype=jnp.uint32),
             jnp.array(0, dtype=jnp.float32),
         )
-
-    # TODO: Do we flip here or not?
 
     # Basic idea is to select the first index of the final permutation,
     # remove the element at that index from the array we'll work with,
     # recurse, increment all indices greater than the one we chose,
     # then `cons` it onto the first index we just chose.
     index_range: UInt32[Array, "n"] = jnp.arange(n, dtype=jnp.uint32)
-    recursed, recursed_losses = vmap(find_permutation_rec, in_axes=(0, 0, 0, 0))(
+    recursed, recursed_losses = vmap(find_permutation_rec, in_axes=(0, 0, 0))(
         cut_axes(actual, index_range, 0),
         cut_axes(ideal, index_range, 0),
         cut_axes(rowwise[1:], index_range, 1),
-        cut_axes(flip[1:], index_range, 1),
     )
 
-    assert recursed.indices.shape == (
+    assert recursed.shape == (
         n,
         n - 1,
-    ), f"{recursed.indices.shape} =/= {(n, n - 1)}"
-
-    assert recursed.flip.shape == (
-        n,
-        n - 1,
-    ), f"{recursed.flip.shape} =/= {(n, n - 1)}"
+    ), f"{recursed.shape} =/= {(n, n - 1)}"
 
     assert recursed_losses.shape == (n,), f"{recursed_losses.shape} =/= {(n,)}"
 
     losses: Float32[Array, "n"] = recursed_losses + rowwise[0]
     assert losses.shape == (n,), f"{losses.shape} =/= {(n,)}"
 
-    argmin: UInt32[Array, ""] = jnp.argmin(losses)
+    argmin: UInt32[Array, ""] = jnp.argmin(losses).astype(jnp.uint32)
     assert argmin.shape == (), f"{argmin.shape} =/= ()"
 
     r_loss: Float32[Array, ""] = losses[argmin]
     assert r_loss.shape == (), f"{r_loss.shape} =/= {()}"
 
-    r_indices: UInt32[Array, "n-1"] = recursed.indices[argmin]
-    assert r_indices.shape == (n - 1,), f"{r_indices.shape} =/= {(n - 1,)}"
+    r_argmin: UInt32[Array, "n-1"] = recursed[argmin]
+    assert r_argmin.shape == (n - 1,), f"{r_argmin.shape} =/= {(n - 1,)}"
 
-    r_indices: UInt32[Array, "n-1"] = jnp.where(
-        r_indices < argmin,
-        r_indices,
-        r_indices + 1,
+    r_separated: UInt32[Array, "n-1"] = jnp.where(
+        r_argmin < argmin,
+        r_argmin,
+        r_argmin + 1,
     )
-    assert r_indices.shape == (n - 1,), f"{r_indices.shape} =/= {(n - 1,)}"
+    assert r_separated.shape == (n - 1,), f"{r_separated.shape} =/= {(n - 1,)}"
 
-    r_indices: UInt32[Array, "n"] = jnp.concat([argmin[jnp.newaxis], r_indices])
+    r_indices: UInt32[Array, "n"] = jnp.concat([argmin[jnp.newaxis], r_separated])
     assert r_indices.shape == (n,), f"{r_indices.shape} =/= {(n,)}"
 
-    r_flip: Bool[Array, "n-1"] = recursed.flip[argmin]
-    assert r_flip.shape == (n - 1,), f"{r_flip.shape} =/= {(n - 1,)}"
-
-    r_flip: Bool[Array, "n"] = jnp.concat([flip[0, argmin, jnp.newaxis], r_flip])
-    assert r_flip.shape == (n,), f"{r_flip.shape} =/= {(n,)}"
-
     # print(
-    #     f"Compiling {actual.shape}-{ideal.shape}-{rowwise.shape}-{flip.shape} permutation-cruncher..."
+    #     f"Compiling {actual.shape}-{ideal.shape}-{rowwise.shape} permutation-cruncher..."
     # )
-    return Permutation(indices=r_indices, flip=r_flip), r_loss
+    return r_indices, r_loss
 
 
 # @check_and_compile()
@@ -196,7 +164,7 @@ def find_permutation_rec(
 def find_permutation(
     actual: Float32[Array, "n m"],
     ideal: Float32[Array, "n m"],
-) -> Permutation:
+) -> UInt32[Array, "n"]:
     """
     Exhaustive search for layer-wise permutations minimizing a given loss
     that nonetheless, when all applied in order, reverse any intermediate permutations
@@ -205,32 +173,25 @@ def find_permutation(
     NOTE: INPUT CANNOT BE DIFFERENTIATED.
     TODO: search a bit more for how to detect the above (nothing yet) . . .
     """
-    n, _ = actual.shape
-    actual_std = jnp.sqrt(
+    n, m = actual.shape
+    actual_std: Float32[Array, "n 1"] = jnp.sqrt(
         jnp.sum(jnp.square(stop_gradient(actual)), axis=1, keepdims=True)
     )
-    ideal_std = jnp.sqrt(
+    ideal_std: Float32[Array, "n 1"] = jnp.sqrt(
         jnp.sum(jnp.square(stop_gradient(ideal)), axis=1, keepdims=True)
     )
-    actual = actual / (actual_std + 1e-8)
-    ideal = ideal / (ideal_std + 1e-8)
+    actual_normalized: Float32[Array, "n m"] = actual / (actual_std + 1e-8)
+    ideal_normalized: Float32[Array, "n m"] = ideal / (ideal_std + 1e-8)
+    actual_squeezed: Float32[Array, "n 1 m"] = actual_normalized[:, jnp.newaxis]
+    ideal_squeezed: Float32[Array, "1 n m"] = ideal_normalized[jnp.newaxis]
 
     # Create a matrix distancing each row from each other row and its negation:
-    stack_neg = lambda x: jnp.stack([x, -x], axis=1)[:, jnp.newaxis]
-    rowwise = jnp.abs(
-        ideal.astype(jnp.float32)[jnp.newaxis, :, jnp.newaxis]
-        - stack_neg(actual.astype(jnp.float32))
-    )
-    assert rowwise.shape[:3] == (n, n, 2)
-    rowwise = jnp.sum(rowwise.reshape(n, n, 2, -1), axis=-1)
-    assert rowwise.shape == (n, n, 2)
+    differences: Float32[Array, "n n m"] = jnp.abs(ideal_squeezed - actual_squeezed)
+    assert differences.shape == (n, n, m)
+    rowwise: Float32[Array, "n n"] = jnp.sum(differences, axis=-1)
+    assert rowwise.shape == (n, n)
 
-    flip = jnp.array(jnp.argmin(rowwise, axis=-1), dtype=jnp.bool)
-    assert flip.shape == (n, n), f"{flip.shape} =/= {(n, n)}"
-    rowwise = jnp.where(flip, rowwise[..., 1], rowwise[..., 0])
-    assert rowwise.shape == (n, n), f"{rowwise.shape} =/= {(n, n)}"
-
-    permutation, _ = find_permutation_rec(actual, ideal, rowwise, flip)
+    permutation, _ = find_permutation_rec(actual, ideal, rowwise)
 
     # print(f"Compiling {actual.shape}-{ideal.shape} `find_permutation`...")
     return permutation
@@ -241,7 +202,7 @@ def find_permutation(
 def layer_distance(
     actual: Weights,
     ideal: Weights,
-) -> Tuple[Float32[Array, ""], List[Permutation]]:
+) -> Tuple[Float32[Array, ""], List[UInt32[Array, "n"]]]:
     """
     Compute the "true" distance between two sets of weights and biases,
     allowing permutations at every layer without changing the final output.
@@ -257,15 +218,6 @@ def layer_distance(
     TODO: Investigate the above . . . if you have the compute to do so.
     """
 
-    # try:
-    #     # Note: this `assert` (not `check`) will always fail under JIT compilation:
-    #     assert tree_reduce(
-    #         operator.and_, tree_map(lambda x: jnp.all(jnp.isfinite(x)), actual)
-    #     ), "`permutations.layer_distance` received non-finite weights"
-    #     # Problem is aggressive inlining: <https://github.com/google/jax/issues/7155>
-    # except TracerBoolConversionError:
-    #     sys.exit("Please don't JIT-compile `permutations.layer_distance`!")
-
     n = layers(actual)
     assert layers(ideal) == n, f"{layers(ideal)} =/= {n}"
 
@@ -273,7 +225,7 @@ def layer_distance(
     wb_actual = wb(actual)
     wb_ideal = wb(ideal)
 
-    last_p: Optional[Permutation] = None
+    last_p: Optional[UInt32[Array, "n"]] = None
     permutations = []
     for i in range(n - 1):
         # Why (... - 1) above? b/c we can't change output rows' meaning by permuting them

@@ -78,6 +78,7 @@ def flatten_quotient(
 
 
 # @check_and_compile()
+@jaxtyped(typechecker=beartype)
 def update(
     p: Params,
     s: State,

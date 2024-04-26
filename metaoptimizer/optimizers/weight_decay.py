@@ -36,6 +36,7 @@ def init(initial_weights: PyTree[Float[Array, "..."]], p: Params) -> State:
 
 
 # @check_and_compile()
+@jaxtyped(typechecker=beartype)
 def update(
     p: Params,
     s: State,

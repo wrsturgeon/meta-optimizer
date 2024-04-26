@@ -1,6 +1,5 @@
 from metaoptimizer import permutations
 from metaoptimizer.optimizers import Optimizer
-from metaoptimizer.permutations import Permutation
 
 from beartype import beartype
 from beartype.typing import Any, Callable, List, Tuple
@@ -9,7 +8,7 @@ from jax import grad, numpy as jnp, value_and_grad
 from jax.errors import TracerBoolConversionError
 from jax.lax import stop_gradient
 from jax.tree_util import tree_map, tree_reduce, tree_structure
-from jaxtyping import jaxtyped, Array, Float32, Float64, PyTree
+from jaxtyping import jaxtyped, Array, Float32, Float64, PyTree, UInt32
 import operator
 import os
 import sys
@@ -25,6 +24,7 @@ OPTIMIZER_LR = jnp.array(0.25, dtype=jnp.float64)
 
 
 # @check_and_compile(1)
+@jaxtyped(typechecker=beartype)
 def loss(
     weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
@@ -42,17 +42,19 @@ def loss(
 
 
 # @check_and_compile(1)
+@jaxtyped(typechecker=beartype)
 def loss_and_grad(
     weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
     inputs: Float32[Array, "batch ndim_in"],
     ground_truth: Float32[Array, "batch ndim_out"],
     power: Float32[Array, ""] = jnp.array(2, dtype=jnp.float32),
-) -> Tuple[PyTree[Float64[Array, "..."]], Float32[Array, ""]]:
+) -> Tuple[Float32[Array, ""], PyTree[Float64[Array, "..."]]]:
     return value_and_grad(loss)(weights, forward_pass, inputs, ground_truth, power)
 
 
 # @check_and_compile(1, 4)
+@jaxtyped(typechecker=beartype)
 def step(
     weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
@@ -75,6 +77,7 @@ def step(
 
 
 # @check_and_compile(1, 4)
+@jaxtyped(typechecker=beartype)
 def update_and_retest(
     weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
@@ -99,6 +102,7 @@ def update_and_retest(
 
 
 # @check_and_compile(2)
+@jaxtyped(typechecker=beartype)
 def slope_away_from_local_minimum(
     opt_params: PyTree[Float64[Array, ""]],
     opt_state: PyTree[Float64[Array, "..."]],
@@ -119,6 +123,7 @@ def slope_away_from_local_minimum(
 
 
 # @check_and_compile(1, 4)
+@jaxtyped(typechecker=beartype)
 def step_downhill(
     weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
@@ -174,6 +179,7 @@ def step_downhill(
 
 
 # @check_and_compile(2)
+@jaxtyped(typechecker=beartype)
 def opt_step_global(
     opt_params: PyTree[Float64[Array, ""]],
     opt_state: PyTree[Float64[Array, "..."]],
@@ -186,7 +192,7 @@ def opt_step_global(
     Tuple[
         PyTree[Float64[Array, "..."]],
         PyTree[Float64[Array, "..."]],
-        List[Permutation],
+        List[UInt32[Array, "n"]],
     ],
 ]:
     # try:
@@ -211,6 +217,7 @@ def opt_step_global(
 
 
 # @check_and_compile(1, 4)
+@jaxtyped(typechecker=beartype)
 def step_global(
     weights: PyTree[Float64[Array, "..."]],
     forward_pass: ForwardPass,
@@ -225,7 +232,7 @@ def step_global(
     PyTree[Float64[Array, "..."]],
     PyTree[Float64[Array, "..."]],
     PyTree[Float64[Array, ""]],
-    List[Permutation],
+    List[UInt32[Array, "n"]],
     Float32[Array, ""],
 ]:
     # try:

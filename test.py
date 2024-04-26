@@ -6,14 +6,22 @@ from metaoptimizer import (
     permutations,
     training,
 )
-from metaoptimizer.optimizers import Optimizer
-from metaoptimizer.permutations import Permutation
+from metaoptimizer.optimizers import (
+    Optimizer,
+    adam,
+    momentum,
+    nesterov,
+    rmsprop,
+    sgd,
+    swiss_army_knife,
+    weight_decay,
+)
 from metaoptimizer.training import ForwardPass
 from metaoptimizer.weights import layers, wb, Weights
 
 from beartype import beartype
 from beartype.typing import Any, Callable, Iterable, Protocol, Tuple
-from hypothesis import given, reproduce_failure, settings, strategies as st, Verbosity
+from hypothesis import given, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
 from jax import jit, grad, nn as jnn, numpy as jnp, random as jrnd
 from jax.experimental.checkify import all_checks, checkify
@@ -23,7 +31,6 @@ from jax.tree_util import tree_map, tree_reduce, tree_structure
 from jaxtyping import (
     jaxtyped,
     Array,
-    Bool,
     Float,
     Float64,
     PyTree,
@@ -63,15 +70,6 @@ else:  # pragma: no cover
     )
     settings.load_profile("no_deadline")
     TEST_COUNT = TEST_COUNT_NORMAL
-
-
-@jaxtyped(typechecker=beartype)
-def no_flip(indices_list: Iterable[int]) -> Permutation:
-    indices = jnp.array(indices_list, dtype=jnp.uint32)
-    return Permutation(
-        indices=indices,
-        flip=jnp.full_like(indices, False, dtype=jnp.bool),
-    )
 
 
 NDIM = 3
@@ -118,7 +116,7 @@ def test_permute_1() -> None:
         ],
         dtype=jnp.float32,
     )
-    i = no_flip([3, 1, 4, 2, 0])
+    i = jnp.array([3, 1, 4, 2, 0], dtype=jnp.uint32)
     y = permutations.permute(x, i, 0)
     assert jnp.allclose(
         y,
@@ -146,7 +144,7 @@ def test_permute_2() -> None:
         ],
         dtype=jnp.float32,
     )
-    i = no_flip([3, 1, 4, 2, 0])
+    i = jnp.array([3, 1, 4, 2, 0], dtype=jnp.uint32)
     y = permutations.permute(x, i, 1)
     assert jnp.allclose(
         y,
@@ -164,7 +162,7 @@ def test_permute_2() -> None:
 
 def test_permute_3() -> None:
     x = jnp.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=jnp.float32)
-    i = no_flip([2, 1, 0])
+    i = jnp.array([2, 1, 0], dtype=jnp.uint32)
     assert jnp.allclose(
         permutations.permute(x, i, 0),
         jnp.array([[7, 8, 9], [4, 5, 6], [1, 2, 3]], dtype=jnp.float32),
@@ -178,16 +176,16 @@ def test_permute_3() -> None:
 @jaxtyped(typechecker=beartype)
 def test_permute_size_check() -> None:
     x = jnp.eye(5, 5, dtype=jnp.float32)
-    i = no_flip(range(6))
-    with pytest.raises(AssertionError):
+    i = jnp.arange(6, dtype=jnp.uint32)
+    with pytest.raises(TypeCheckError):
         permutations.permute(x, i, 0)
 
 
 @jaxtyped(typechecker=beartype)
 def test_permute_axis_check() -> None:
     x = jnp.eye(5, 5, dtype=jnp.float32)
-    i = no_flip(range(5))
-    with pytest.raises(IndexError):
+    i = jnp.arange(5, dtype=jnp.uint32)
+    with pytest.raises(ValueError):
         permutations.permute(x, i, 5)
 
 
@@ -288,9 +286,7 @@ def test_find_permutation_1() -> None:
     assert wb_i.shape[0] == 1
     p = permutations.find_permutation(wb_a[0], wb_i[0])
     ideal_indices = jnp.array([2, 0, 3, 1, 4], dtype=jnp.uint32)
-    ideal_flip = jnp.array([True, False, True, False, False], dtype=jnp.bool)
-    assert jnp.all(p.indices == ideal_indices), f"{p.indices} =/= {ideal_indices}"
-    assert jnp.all(p.flip == ideal_flip), f"{p.flip} =/= {ideal_flip}"
+    assert jnp.all(p == ideal_indices), f"{p} =/= {ideal_indices}"
 
 
 @jaxtyped(typechecker=beartype)
@@ -298,15 +294,11 @@ def prop_better_than_random_permutation(
     x: Float[Array, "n m"],
     y: Float[Array, "n m"],
     randomly_chosen_indices: UInt32[Array, "n"],
-    randomly_chosen_flip: Bool[Array, "n"],
 ) -> None:
     if not (jnp.all(jnp.isfinite(x)) and jnp.all(jnp.isfinite(y))):
         return
     allegedly_ideal = permutations.find_permutation(x, y)
-    randomly_chosen = Permutation(
-        indices=randomly_chosen_indices,
-        flip=randomly_chosen_flip,
-    )
+    randomly_chosen = randomly_chosen_indices
     x = x / (
         jnp.sqrt(jnp.sum(jnp.square(stop_gradient(x)), axis=1, keepdims=True)) + 1e-8
     )
@@ -334,7 +326,6 @@ def test_better_than_random_permutation_frozen_1() -> None:
         x,
         jnp.array([[1, 0], [0, 0]], dtype=jnp.float32),
         jnp.array([0, 1], dtype=jnp.uint32),
-        jnp.array([False, False], dtype=jnp.bool),
     )
 
 
@@ -343,7 +334,6 @@ def test_better_than_random_permutation_frozen_2() -> None:
         jnp.array([[0, 1], [0, 0]], dtype=jnp.float32),
         jnp.array([[0, 0], [0, -1]], dtype=jnp.float32),
         jnp.array([0, 1], dtype=jnp.uint32),
-        jnp.array([False, False], dtype=jnp.bool),
     )
 
 
@@ -352,7 +342,6 @@ def test_better_than_random_permutation_frozen_3() -> None:
         jnp.array([[0, 0, 0], [0, 0, 0], [0, 0, 1]], dtype=jnp.float32),
         jnp.array([[0, 0, 1], [0, 0, 0], [0, 0, 0]], dtype=jnp.float32),
         jnp.array([0, 1, 2], dtype=jnp.uint32),
-        jnp.array([False, False, False], dtype=jnp.bool),
     )
 
 
@@ -360,14 +349,12 @@ def test_better_than_random_permutation_frozen_3() -> None:
     hnp.arrays(dtype=jnp.float32, shape=(2, 2)),
     hnp.arrays(dtype=jnp.float32, shape=(2, 2)),
     st.permutations(range(2)),
-    hnp.arrays(dtype=jnp.bool, shape=(2,)),
 )
-def test_better_than_random_permutation_prop_2(x, y, randomly_chosen, flip) -> None:
+def test_better_than_random_permutation_prop_2(x, y, randomly_chosen) -> None:
     prop_better_than_random_permutation(
         jnp.array(x),
         jnp.array(y),
         jnp.array(randomly_chosen, dtype=jnp.uint32),
-        jnp.array(flip, dtype=jnp.bool),
     )
 
 
@@ -375,14 +362,12 @@ def test_better_than_random_permutation_prop_2(x, y, randomly_chosen, flip) -> N
     hnp.arrays(dtype=jnp.float32, shape=(3, 3)),
     hnp.arrays(dtype=jnp.float32, shape=(3, 3)),
     st.permutations(range(3)),
-    hnp.arrays(dtype=jnp.bool, shape=(3,)),
 )
-def test_better_than_random_permutation_prop_3(x, y, randomly_chosen, flip) -> None:
+def test_better_than_random_permutation_prop_3(x, y, randomly_chosen) -> None:
     prop_better_than_random_permutation(
         jnp.array(x),
         jnp.array(y),
         jnp.array(randomly_chosen, dtype=jnp.uint32),
-        jnp.array(flip, dtype=jnp.bool),
     )
 
 
@@ -390,14 +375,12 @@ def test_better_than_random_permutation_prop_3(x, y, randomly_chosen, flip) -> N
     hnp.arrays(dtype=jnp.float32, shape=(4, 4)),
     hnp.arrays(dtype=jnp.float32, shape=(4, 4)),
     st.permutations(range(4)),
-    hnp.arrays(dtype=jnp.bool, shape=(4,)),
 )
-def test_better_than_random_permutation_prop_4(x, y, randomly_chosen, flip) -> None:
+def test_better_than_random_permutation_prop_4(x, y, randomly_chosen) -> None:
     prop_better_than_random_permutation(
         jnp.array(x),
         jnp.array(y),
         jnp.array(randomly_chosen, dtype=jnp.uint32),
-        jnp.array(flip, dtype=jnp.bool),
     )
 
 
@@ -405,21 +388,19 @@ def test_better_than_random_permutation_prop_4(x, y, randomly_chosen, flip) -> N
     hnp.arrays(dtype=jnp.float32, shape=(5, 5)),
     hnp.arrays(dtype=jnp.float32, shape=(5, 5)),
     st.permutations(range(5)),
-    hnp.arrays(dtype=jnp.bool, shape=(5,)),
 )
-def test_better_than_random_permutation_prop_5(x, y, randomly_chosen, flip) -> None:
+def test_better_than_random_permutation_prop_5(x, y, randomly_chosen) -> None:
     prop_better_than_random_permutation(
         jnp.array(x),
         jnp.array(y),
         jnp.array(randomly_chosen, dtype=jnp.uint32),
-        jnp.array(flip, dtype=jnp.bool),
     )
 
 
 @jaxtyped(typechecker=beartype)
 def prop_permute_hidden_layers(
     w: Weights,
-    p: list[Permutation],
+    p: list[UInt32[Array, "n"]],
     x: Float[Array, "batch ndim"],
     nl: Callable = jnn.gelu,
 ) -> None:
@@ -446,7 +427,7 @@ def prop_permute_hidden_layers(
 def test_permute_hidden_layers_1() -> None:
     prop_permute_hidden_layers(
         Weights(jnp.zeros([3, 5, 5]), jnp.zeros([3, 5])),
-        [no_flip(range(5)) for _ in range(2)],
+        [jnp.arange(5, dtype=jnp.uint32) for _ in range(2)],
         jnp.zeros([1, 5], dtype=jnp.float32),
     )
 
@@ -458,13 +439,7 @@ def test_permute_hidden_layers_2() -> None:
             W=jnp.ones([3, 5, 5], dtype=jnp.float64),
             B=jnp.ones([3, 5], dtype=jnp.float64),
         ),
-        p=[
-            no_flip(range(5)),
-            Permutation(
-                indices=jnp.arange(5, dtype=jnp.uint32),
-                flip=jnp.array([False, False, False, False, True], dtype=jnp.bool),
-            ),
-        ],
+        p=[jnp.arange(5, dtype=jnp.uint32) for _ in range(2)],
         x=jnp.zeros([1, 5], dtype=jnp.float32),
     )
 
@@ -473,7 +448,6 @@ def test_permute_hidden_layers_2() -> None:
     hnp.arrays(dtype=jnp.float64, shape=(2, 5, 5)),
     hnp.arrays(dtype=jnp.float64, shape=(2, 5)),
     st.lists(st.permutations(range(5)), min_size=1, max_size=1),
-    st.lists(st.lists(st.booleans(), min_size=5, max_size=5), min_size=1, max_size=1),
     hnp.arrays(dtype=jnp.float32, shape=(1, 5)),
 )
 @jaxtyped(typechecker=beartype)
@@ -481,28 +455,19 @@ def test_permute_hidden_layers_prop_1(
     W: ArrayLike,
     B: ArrayLike,
     P: list[list[int]],
-    F: list[list[bool]],
     x: ArrayLike,
 ) -> None:
     prop_permute_hidden_layers(
         Weights(jnp.array(W, dtype=jnp.float64), jnp.array(B, dtype=jnp.float64)),
-        [
-            Permutation(
-                indices=jnp.array(p, dtype=jnp.uint32),
-                flip=jnp.array(f, dtype=jnp.bool),
-            )
-            for p, f in zip(P, F)
-        ],
+        [jnp.array(p, dtype=jnp.uint32) for p in P],
         jnp.array(x, dtype=jnp.float32),
     )
 
 
-@reproduce_failure("6.99.12", b"AXicY2CAA0YG7GwsIgAAjQAE")
 @given(
     hnp.arrays(dtype=jnp.float64, shape=(3, 5, 5)),
     hnp.arrays(dtype=jnp.float64, shape=(3, 5)),
     st.lists(st.permutations(range(5)), min_size=2, max_size=2),
-    st.lists(st.lists(st.booleans(), min_size=5, max_size=5), min_size=2, max_size=2),
     hnp.arrays(dtype=jnp.float32, shape=(1, 5)),
 )
 @jaxtyped(typechecker=beartype)
@@ -510,18 +475,11 @@ def test_permute_hidden_layers_prop_2(
     W: ArrayLike,
     B: ArrayLike,
     P: list[list[int]],
-    F: list[list[bool]],
     x: ArrayLike,
 ) -> None:
     prop_permute_hidden_layers(
         Weights(jnp.array(W, dtype=jnp.float64), jnp.array(B, dtype=jnp.float64)),
-        [
-            Permutation(
-                indices=jnp.array(p, dtype=jnp.uint32),
-                flip=jnp.array(f, dtype=jnp.bool),
-            )
-            for p, f in zip(P, F)
-        ],
+        [jnp.array(p, dtype=jnp.uint32) for p in P],
         jnp.array(x, dtype=jnp.float32),
     )
 
@@ -530,7 +488,6 @@ def test_permute_hidden_layers_prop_2(
     hnp.arrays(dtype=jnp.float64, shape=(4, 5, 5)),
     hnp.arrays(dtype=jnp.float64, shape=(4, 5)),
     st.lists(st.permutations(range(5)), min_size=3, max_size=3),
-    st.lists(st.lists(st.booleans(), min_size=5, max_size=5), min_size=3, max_size=3),
     hnp.arrays(dtype=jnp.float32, shape=(1, 5)),
 )
 @jaxtyped(typechecker=beartype)
@@ -538,18 +495,11 @@ def test_permute_hidden_layers_prop_3(
     W: ArrayLike,
     B: ArrayLike,
     P: list[list[int]],
-    F: list[list[bool]],
     x: ArrayLike,
 ) -> None:
     prop_permute_hidden_layers(
         Weights(jnp.array(W, dtype=jnp.float64), jnp.array(B, dtype=jnp.float64)),
-        [
-            Permutation(
-                indices=jnp.array(p, dtype=jnp.uint32),
-                flip=jnp.array(f, dtype=jnp.bool),
-            )
-            for p, f in zip(P, F)
-        ],
+        [jnp.array(p, dtype=jnp.uint32) for p in P],
         jnp.array(x, dtype=jnp.float32),
     )
 
@@ -557,8 +507,8 @@ def test_permute_hidden_layers_prop_3(
 @jaxtyped(typechecker=beartype)
 def test_layer_distance() -> None:
     eye = jnp.eye(5, 5)
-    perm = no_flip([3, 1, 4, 2, 0])
-    inv_perm = no_flip([4, 1, 3, 0, 2])
+    perm = jnp.array([3, 1, 4, 2, 0], dtype=jnp.uint32)
+    inv_perm = jnp.array([4, 1, 3, 0, 2], dtype=jnp.uint32)
     Wactual = jnp.stack(
         [
             permutations.permute(eye, perm, 0),
@@ -602,39 +552,53 @@ def test_optim_trivial() -> None:
     # and this should significantly speed things up.
 
     print("SGD")
-    import metaoptimizer.optimizers.sgd as optim
-
-    prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
+    prop_optim_trivial(
+        sgd.update,
+        sgd.defaults(lr=jnp.array(0.5)),
+        sgd.init,
+    )
 
     print("Weight decay")
-    import metaoptimizer.optimizers.weight_decay as optim
-
-    prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
+    prop_optim_trivial(
+        weight_decay.update,
+        weight_decay.defaults(lr=jnp.array(0.5)),
+        weight_decay.init,
+    )
 
     print("Momentum")
-    import metaoptimizer.optimizers.momentum as optim
-
-    prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
+    prop_optim_trivial(
+        momentum.update,
+        momentum.defaults(lr=jnp.array(0.5)),
+        momentum.init,
+    )
 
     print("Nesterov")
-    import metaoptimizer.optimizers.nesterov as optim
-
-    prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
+    prop_optim_trivial(
+        nesterov.update,
+        nesterov.defaults(lr=jnp.array(0.5)),
+        nesterov.init,
+    )
 
     print("RMSProp")
-    import metaoptimizer.optimizers.rmsprop as optim
-
-    prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
+    prop_optim_trivial(
+        rmsprop.update,
+        rmsprop.defaults(lr=jnp.array(0.5)),
+        rmsprop.init,
+    )
 
     print("Adam")
-    import metaoptimizer.optimizers.adam as optim
-
-    prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
+    prop_optim_trivial(
+        adam.update,
+        adam.defaults(lr=jnp.array(0.5)),
+        adam.init,
+    )
 
     print("Swiss army knife")
-    import metaoptimizer.optimizers.swiss_army_knife as optim
-
-    prop_optim_trivial(optim.update, optim.defaults(lr=jnp.array(0.5)), optim.init)
+    prop_optim_trivial(
+        swiss_army_knife.update,
+        swiss_army_knife.defaults(lr=jnp.array(0.5)),
+        swiss_army_knife.init,
+    )
 
 
 @jaxtyped(typechecker=beartype)
@@ -680,39 +644,53 @@ def test_prop_optim() -> None:
     # and this should significantly speed things up.
 
     print("SGD")
-    import metaoptimizer.optimizers.sgd as optim
-
-    prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim(
+        sgd.update,
+        sgd.defaults(lr=LR),
+        sgd.init,
+    )
 
     print("Weight decay")
-    import metaoptimizer.optimizers.weight_decay as optim
-
-    prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim(
+        weight_decay.update,
+        weight_decay.defaults(lr=LR),
+        weight_decay.init,
+    )
 
     print("Momentum")
-    import metaoptimizer.optimizers.momentum as optim
-
-    prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim(
+        momentum.update,
+        momentum.defaults(lr=LR),
+        momentum.init,
+    )
 
     print("Nesterov")
-    import metaoptimizer.optimizers.nesterov as optim
-
-    prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim(
+        nesterov.update,
+        nesterov.defaults(lr=LR),
+        nesterov.init,
+    )
 
     print("RMSProp")
-    import metaoptimizer.optimizers.rmsprop as optim
-
-    prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim(
+        rmsprop.update,
+        rmsprop.defaults(lr=LR),
+        rmsprop.init,
+    )
 
     print("Adam")
-    import metaoptimizer.optimizers.adam as optim
-
-    prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim(
+        adam.update,
+        adam.defaults(lr=LR),
+        adam.init,
+    )
 
     print("Swiss army knife")
-    import metaoptimizer.optimizers.swiss_army_knife as optim
-
-    prop_optim(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim(
+        swiss_army_knife.update,
+        swiss_army_knife.defaults(lr=LR),
+        swiss_army_knife.init,
+    )
 
 
 @jaxtyped(typechecker=beartype)
@@ -774,39 +752,53 @@ def test_prop_optim_downhill() -> None:
     # and this should significantly speed things up.
 
     print("SGD")
-    import metaoptimizer.optimizers.sgd as optim
-
-    prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim_downhill(
+        sgd.update,
+        sgd.defaults(lr=LR),
+        sgd.init,
+    )
 
     print("Weight decay")
-    import metaoptimizer.optimizers.weight_decay as optim
-
-    prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim_downhill(
+        weight_decay.update,
+        weight_decay.defaults(lr=LR),
+        weight_decay.init,
+    )
 
     print("Momentum")
-    import metaoptimizer.optimizers.momentum as optim
-
-    prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim_downhill(
+        momentum.update,
+        momentum.defaults(lr=LR),
+        momentum.init,
+    )
 
     print("Nesterov")
-    import metaoptimizer.optimizers.nesterov as optim
-
-    prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim_downhill(
+        nesterov.update,
+        nesterov.defaults(lr=LR),
+        nesterov.init,
+    )
 
     print("RMSProp")
-    import metaoptimizer.optimizers.rmsprop as optim
-
-    prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim_downhill(
+        rmsprop.update,
+        rmsprop.defaults(lr=LR),
+        rmsprop.init,
+    )
 
     print("Adam")
-    import metaoptimizer.optimizers.adam as optim
-
-    prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim_downhill(
+        adam.update,
+        adam.defaults(lr=LR),
+        adam.init,
+    )
 
     print("Swiss army knife")
-    import metaoptimizer.optimizers.swiss_army_knife as optim
-
-    prop_optim_downhill(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim_downhill(
+        swiss_army_knife.update,
+        swiss_army_knife.defaults(lr=LR),
+        swiss_army_knife.init,
+    )
 
 
 @jaxtyped(typechecker=beartype)
@@ -880,36 +872,50 @@ def test_prop_optim_global() -> None:
     # and this should significantly speed things up.
 
     print("SGD")
-    import metaoptimizer.optimizers.sgd as optim
-
-    prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim_global(
+        sgd.update,
+        sgd.defaults(lr=LR),
+        sgd.init,
+    )
 
     print("Weight decay")
-    import metaoptimizer.optimizers.weight_decay as optim
-
-    prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim_global(
+        weight_decay.update,
+        weight_decay.defaults(lr=LR),
+        weight_decay.init,
+    )
 
     print("Momentum")
-    import metaoptimizer.optimizers.momentum as optim
-
-    prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim_global(
+        momentum.update,
+        momentum.defaults(lr=LR),
+        momentum.init,
+    )
 
     print("Nesterov")
-    import metaoptimizer.optimizers.nesterov as optim
-
-    prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim_global(
+        nesterov.update,
+        nesterov.defaults(lr=LR),
+        nesterov.init,
+    )
 
     print("RMSProp")
-    import metaoptimizer.optimizers.rmsprop as optim
-
-    prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim_global(
+        rmsprop.update,
+        rmsprop.defaults(lr=LR),
+        rmsprop.init,
+    )
 
     print("Adam")
-    import metaoptimizer.optimizers.adam as optim
-
-    prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim_global(
+        adam.update,
+        adam.defaults(lr=LR),
+        adam.init,
+    )
 
     print("Swiss army knife")
-    import metaoptimizer.optimizers.swiss_army_knife as optim
-
-    prop_optim_global(optim.update, optim.defaults(lr=LR), optim.init)
+    prop_optim_global(
+        swiss_army_knife.update,
+        swiss_army_knife.defaults(lr=LR),
+        swiss_army_knife.init,
+    )

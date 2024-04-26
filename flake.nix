@@ -60,6 +60,7 @@
           p: py: with py; [
             black
             coverage
+            mypy
           ];
         dev-pkgs = p: py: with py; [ python-lsp-server ];
         lookup-pkg-sets =
@@ -84,6 +85,7 @@
               ${rm} -fr result
               ${find} . -name '*.nix' | ${xargs} ${nixfmt-bin} --check
               ${python} -m black --check .
+              ${python} -m mypy .
               ${python} -m coverage run --omit='/nix/*' -m pytest -Werror test.py
               ${python} -m coverage report -m --fail-under=100
             '';

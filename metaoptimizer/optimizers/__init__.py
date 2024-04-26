@@ -19,6 +19,7 @@ Optimizer = Callable[
 
 
 # @check_and_compile()
+@jaxtyped(typechecker=beartype)
 def inverse_sigmoid(x: Float[Array, "*n"]) -> Float[Array, "*n"]:
     # https://stackoverflow.com/questions/10097891/inverse-logistic-sigmoid-function
     check(

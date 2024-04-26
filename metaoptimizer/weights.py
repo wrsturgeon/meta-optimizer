@@ -20,6 +20,7 @@ def layers(w: Weights) -> int:
 
 
 # @check_and_compile()
+@jaxtyped(typechecker=beartype)
 def wb(weights: Weights) -> Float32[Array, "n_layers n_out n_in_plus_1"]:
     assert weights.W.ndim == 3
     assert weights.B.ndim == 2
