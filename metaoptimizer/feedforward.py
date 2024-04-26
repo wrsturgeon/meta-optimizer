@@ -5,7 +5,7 @@ from beartype.typing import Callable, Tuple
 from check_and_compile import check_and_compile
 from jax import nn as jnn, numpy as jnp, random as jrnd
 from jax.numpy import linalg as jla
-from jaxtyping import jaxtyped, Array, Float32, Float64, PyTree, UInt16, UInt32
+from jaxtyping import jaxtyped, Array, Float32, Float64, PyTree, UInt32
 import os
 
 
@@ -13,6 +13,7 @@ KeyArray = UInt32[Array, "n_keys"]  # <https://github.com/google/jax/issues/1270
 
 
 # @check_and_compile(3)
+@jaxtyped(typechecker=beartype)
 def nonlinear(
     x: Float32[Array, "batch n_in"],
     w: Float64[Array, "n_out n_in"],
@@ -25,10 +26,18 @@ def nonlinear(
     Z = W @ X + B
     assert Z.shape[-1] == 1
     z = Z[..., 0]
-    return nl(z)
+    y = nl(z)
+    print()
+    print("Nonlinear layer took")
+    print(x)
+    print("to")
+    print(y)
+    print()
+    return y
 
 
 # @check_and_compile(2)
+@jaxtyped(typechecker=beartype)
 def run(
     weights: Weights,
     x: Float32[Array, "batch n_in"],

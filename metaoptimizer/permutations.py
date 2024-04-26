@@ -17,7 +17,7 @@ from jaxtyping import (
     Int,
     PyTree,
     Shaped,
-    UInt16,
+    UInt32,
 )
 import operator
 import sys
@@ -27,28 +27,36 @@ from typing import NamedTuple
 class Permutation(NamedTuple):
     """Description of a permutation on some tensor (without explicitly carrying around that tensor)."""
 
-    indices: UInt16[Array, "n"]
+    indices: UInt32[Array, "n"]
     flip: Bool[Array, "n"]
 
 
 # @check_and_compile(2)
+@jaxtyped(typechecker=beartype)
+def permute_vector(
+    x: Shaped[Array, "n"],
+    permutation: Permutation,
+    axis: int,
+):
+    assert (
+        permutation.indices.shape == permutation.flip.shape == x.shape
+    ), f"{permutation.indices.shape} =/= {permutation.flip.shape} =/= {x.shape}"
+    permuted = x[permutation.indices]
+    return jnp.where(permutation.flip, -permuted, permuted)
+
+
+# @check_and_compile(2)
+@jaxtyped(typechecker=beartype)
 def permute(
     x: Shaped[Array, "*n"],
     permutation: Permutation,
     axis: int,
 ) -> Shaped[Array, "*n"]:
-    n = x.shape[axis]
-    assert (
-        permutation.indices.shape == permutation.flip.shape == (n,)
-    ), f"{permutation.indices.shape} =/= {permutation.flip.shape} =/= ({n},)"
-    permuted = jnp.apply_along_axis(lambda z: z[permutation.indices], axis, x)
-    flip = permutation.flip
-    while flip.ndim < permuted.ndim:
-        flip = flip[..., jnp.newaxis]
-    return jnp.where(flip, -permuted, permuted)
+    return jnp.apply_along_axis(lambda z: permute_vector(z, permutation, axis), axis, x)
 
 
 # @check_and_compile()
+@jaxtyped(typechecker=beartype)
 def permute_hidden_layers(
     w: Weights,
     ps: List[Permutation],
@@ -67,9 +75,10 @@ def permute_hidden_layers(
 
 
 # @check_and_compile(2)
+@jaxtyped(typechecker=beartype)
 def cut_axes(
     x: Shaped[Array, "..."],
-    indices: UInt16[Array, "n_indices"],
+    indices: UInt32[Array, "n_indices"],
     axis: int = 0,
 ) -> Shaped[Array, "n_indices ..."]:
     n = x.shape[axis]
@@ -89,6 +98,7 @@ def cut_axes(
 
 
 # @check_and_compile()
+@jaxtyped(typechecker=beartype)
 def find_permutation_rec(
     actual: Float32[Array, "n ..."],
     ideal: Float32[Array, "n ..."],
@@ -115,7 +125,7 @@ def find_permutation_rec(
     if n == 0:
         return (
             Permutation(
-                indices=jnp.array([], dtype=jnp.uint16),
+                indices=jnp.array([], dtype=jnp.uint32),
                 flip=jnp.array([], dtype=jnp.bool),
             ),
             jnp.array(0, dtype=jnp.float32),
@@ -127,7 +137,7 @@ def find_permutation_rec(
     # remove the element at that index from the array we'll work with,
     # recurse, increment all indices greater than the one we chose,
     # then `cons` it onto the first index we just chose.
-    index_range: UInt16[Array, "n"] = jnp.arange(n, dtype=jnp.uint16)
+    index_range: UInt32[Array, "n"] = jnp.arange(n, dtype=jnp.uint32)
     recursed, recursed_losses = vmap(find_permutation_rec, in_axes=(0, 0, 0, 0))(
         cut_axes(actual, index_range, 0),
         cut_axes(ideal, index_range, 0),
@@ -150,23 +160,23 @@ def find_permutation_rec(
     losses: Float32[Array, "n"] = recursed_losses + rowwise[0]
     assert losses.shape == (n,), f"{losses.shape} =/= {(n,)}"
 
-    argmin: UInt16[Array, ""] = jnp.argmin(losses)
+    argmin: UInt32[Array, ""] = jnp.argmin(losses)
     assert argmin.shape == (), f"{argmin.shape} =/= ()"
 
     r_loss: Float32[Array, ""] = losses[argmin]
     assert r_loss.shape == (), f"{r_loss.shape} =/= {()}"
 
-    r_indices: UInt16[Array, "n-1"] = recursed.indices[argmin]
+    r_indices: UInt32[Array, "n-1"] = recursed.indices[argmin]
     assert r_indices.shape == (n - 1,), f"{r_indices.shape} =/= {(n - 1,)}"
 
-    r_indices: UInt16[Array, "n-1"] = jnp.where(
+    r_indices: UInt32[Array, "n-1"] = jnp.where(
         r_indices < argmin,
         r_indices,
         r_indices + 1,
     )
     assert r_indices.shape == (n - 1,), f"{r_indices.shape} =/= {(n - 1,)}"
 
-    r_indices: UInt16[Array, "n"] = jnp.concat([argmin[jnp.newaxis], r_indices])
+    r_indices: UInt32[Array, "n"] = jnp.concat([argmin[jnp.newaxis], r_indices])
     assert r_indices.shape == (n,), f"{r_indices.shape} =/= {(n,)}"
 
     r_flip: Bool[Array, "n-1"] = recursed.flip[argmin]
@@ -182,6 +192,7 @@ def find_permutation_rec(
 
 
 # @check_and_compile()
+@jaxtyped(typechecker=beartype)
 def find_permutation(
     actual: Float32[Array, "n m"],
     ideal: Float32[Array, "n m"],
@@ -226,6 +237,7 @@ def find_permutation(
 
 
 # @check_and_compile()
+@jaxtyped(typechecker=beartype)
 def layer_distance(
     actual: Weights,
     ideal: Weights,

@@ -18,7 +18,7 @@ from jaxtyping import (
     Float64,
     Int64,
     PyTree,
-    UInt16,
+    UInt32,
     UInt64,
 )
 import matplotlib.pyplot as plt
@@ -138,7 +138,7 @@ def run(
     permutation_indices = (
         np.empty(
             [training_steps, layers - 1, ndim],
-            dtype=np.uint16,
+            dtype=np.uint32,
         )
         if track_permutation_indices
         else None
@@ -229,7 +229,7 @@ def run(
                     permutation_indices[i] = (
                         np.array([p.indices for p in permutation])
                         if layers > 1
-                        else np.empty([0, 1], dtype=np.uint16)
+                        else np.empty([0, 1], dtype=np.uint32)
                     )
 
                 if permutation_flips is not None:

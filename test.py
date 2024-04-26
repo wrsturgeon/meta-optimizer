@@ -13,7 +13,7 @@ from metaoptimizer.weights import layers, wb, Weights
 
 from beartype import beartype
 from beartype.typing import Any, Callable, Iterable, Protocol, Tuple
-from hypothesis import given, settings, strategies as st, Verbosity
+from hypothesis import given, reproduce_failure, settings, strategies as st, Verbosity
 from hypothesis.extra import numpy as hnp
 from jax import jit, grad, nn as jnn, numpy as jnp, random as jrnd
 from jax.experimental.checkify import all_checks, checkify
@@ -28,7 +28,7 @@ from jaxtyping import (
     Float64,
     PyTree,
     TypeCheckError,
-    UInt16,
+    UInt32,
 )
 from math import prod
 from numpy.typing import ArrayLike
@@ -67,7 +67,7 @@ else:  # pragma: no cover
 
 @jaxtyped(typechecker=beartype)
 def no_flip(indices_list: Iterable[int]) -> Permutation:
-    indices = jnp.array(indices_list, dtype=jnp.uint16)
+    indices = jnp.array(indices_list, dtype=jnp.uint32)
     return Permutation(
         indices=indices,
         flip=jnp.full_like(indices, False, dtype=jnp.bool),
@@ -83,7 +83,7 @@ LR = jnp.array(0.001)
 
 @given(hnp.arrays(dtype=jnp.float32, shape=(3, 3)))
 @jaxtyped(typechecker=beartype)
-def test_feedforward_id_prop(np_x: ArrayLike):
+def test_feedforward_id_prop(np_x: ArrayLike) -> None:
     x = jnp.array(np_x)
     if not jnp.all(jnp.isfinite(x)):
         return
@@ -107,7 +107,7 @@ def test_feedforward_id_prop(np_x: ArrayLike):
 
 
 @jaxtyped(typechecker=beartype)
-def test_permute_1():
+def test_permute_1() -> None:
     x = jnp.array(
         [
             [1, 0, 0, 0, 0],
@@ -135,7 +135,7 @@ def test_permute_1():
 
 
 @jaxtyped(typechecker=beartype)
-def test_permute_2():
+def test_permute_2() -> None:
     x = jnp.array(
         [
             [1, 0, 0, 0, 0],
@@ -162,7 +162,7 @@ def test_permute_2():
     )
 
 
-def test_permute_3():
+def test_permute_3() -> None:
     x = jnp.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=jnp.float32)
     i = no_flip([2, 1, 0])
     assert jnp.allclose(
@@ -176,7 +176,7 @@ def test_permute_3():
 
 
 @jaxtyped(typechecker=beartype)
-def test_permute_size_check():
+def test_permute_size_check() -> None:
     x = jnp.eye(5, 5, dtype=jnp.float32)
     i = no_flip(range(6))
     with pytest.raises(AssertionError):
@@ -184,7 +184,7 @@ def test_permute_size_check():
 
 
 @jaxtyped(typechecker=beartype)
-def test_permute_axis_check():
+def test_permute_axis_check() -> None:
     x = jnp.eye(5, 5, dtype=jnp.float32)
     i = no_flip(range(5))
     with pytest.raises(IndexError):
@@ -192,7 +192,7 @@ def test_permute_axis_check():
 
 
 @jaxtyped(typechecker=beartype)
-def test_cut_axes():
+def test_cut_axes() -> None:
     a = jnp.array(
         [
             [1, 2, 3, 4],
@@ -202,7 +202,7 @@ def test_cut_axes():
         ],
     )
     assert jnp.allclose(
-        permutations.cut_axes(a, jnp.arange(4, dtype=jnp.uint16), 0),
+        permutations.cut_axes(a, jnp.arange(4, dtype=jnp.uint32), 0),
         jnp.array(
             [
                 [
@@ -229,7 +229,7 @@ def test_cut_axes():
         ),
     )
     assert jnp.allclose(
-        permutations.cut_axes(a, jnp.arange(4, dtype=jnp.uint16), 1),
+        permutations.cut_axes(a, jnp.arange(4, dtype=jnp.uint32), 1),
         jnp.array(
             [
                 [
@@ -262,7 +262,7 @@ def test_cut_axes():
 
 
 @jaxtyped(typechecker=beartype)
-def test_find_permutation_1():
+def test_find_permutation_1() -> None:
     ideal = Weights(
         W=jnp.eye(5, 5, dtype=jnp.float64)[jnp.newaxis],
         B=jnp.ones([1, 5], dtype=jnp.float64),
@@ -287,7 +287,7 @@ def test_find_permutation_1():
     assert wb_a.shape[0] == 1
     assert wb_i.shape[0] == 1
     p = permutations.find_permutation(wb_a[0], wb_i[0])
-    ideal_indices = jnp.array([2, 0, 3, 1, 4], dtype=jnp.uint16)
+    ideal_indices = jnp.array([2, 0, 3, 1, 4], dtype=jnp.uint32)
     ideal_flip = jnp.array([True, False, True, False, False], dtype=jnp.bool)
     assert jnp.all(p.indices == ideal_indices), f"{p.indices} =/= {ideal_indices}"
     assert jnp.all(p.flip == ideal_flip), f"{p.flip} =/= {ideal_flip}"
@@ -297,9 +297,9 @@ def test_find_permutation_1():
 def prop_better_than_random_permutation(
     x: Float[Array, "n m"],
     y: Float[Array, "n m"],
-    randomly_chosen_indices: UInt16[Array, "n"],
+    randomly_chosen_indices: UInt32[Array, "n"],
     randomly_chosen_flip: Bool[Array, "n"],
-):
+) -> None:
     if not (jnp.all(jnp.isfinite(x)) and jnp.all(jnp.isfinite(y))):
         return
     allegedly_ideal = permutations.find_permutation(x, y)
@@ -320,7 +320,7 @@ def prop_better_than_random_permutation(
     assert (jnp.abs(aL - rL) < 0.0001) or (aL < rL), f"{aL} </= {rL}"
 
 
-def test_better_than_random_permutation_frozen_1():
+def test_better_than_random_permutation_frozen_1() -> None:
     # First, test that we're normalizing the right axes:
     x = jnp.array([[1, 1], [-1, 0]], dtype=jnp.float32)
     x_std = (
@@ -333,25 +333,25 @@ def test_better_than_random_permutation_frozen_1():
     prop_better_than_random_permutation(
         x,
         jnp.array([[1, 0], [0, 0]], dtype=jnp.float32),
-        jnp.array([0, 1], dtype=jnp.uint16),
+        jnp.array([0, 1], dtype=jnp.uint32),
         jnp.array([False, False], dtype=jnp.bool),
     )
 
 
-def test_better_than_random_permutation_frozen_2():
+def test_better_than_random_permutation_frozen_2() -> None:
     prop_better_than_random_permutation(
         jnp.array([[0, 1], [0, 0]], dtype=jnp.float32),
         jnp.array([[0, 0], [0, -1]], dtype=jnp.float32),
-        jnp.array([0, 1], dtype=jnp.uint16),
+        jnp.array([0, 1], dtype=jnp.uint32),
         jnp.array([False, False], dtype=jnp.bool),
     )
 
 
-def test_better_than_random_permutation_frozen_3():
+def test_better_than_random_permutation_frozen_3() -> None:
     prop_better_than_random_permutation(
         jnp.array([[0, 0, 0], [0, 0, 0], [0, 0, 1]], dtype=jnp.float32),
         jnp.array([[0, 0, 1], [0, 0, 0], [0, 0, 0]], dtype=jnp.float32),
-        jnp.array([0, 1, 2], dtype=jnp.uint16),
+        jnp.array([0, 1, 2], dtype=jnp.uint32),
         jnp.array([False, False, False], dtype=jnp.bool),
     )
 
@@ -362,11 +362,11 @@ def test_better_than_random_permutation_frozen_3():
     st.permutations(range(2)),
     hnp.arrays(dtype=jnp.bool, shape=(2,)),
 )
-def test_better_than_random_permutation_prop_2(x, y, randomly_chosen, flip):
+def test_better_than_random_permutation_prop_2(x, y, randomly_chosen, flip) -> None:
     prop_better_than_random_permutation(
         jnp.array(x),
         jnp.array(y),
-        jnp.array(randomly_chosen, dtype=jnp.uint16),
+        jnp.array(randomly_chosen, dtype=jnp.uint32),
         jnp.array(flip, dtype=jnp.bool),
     )
 
@@ -377,11 +377,11 @@ def test_better_than_random_permutation_prop_2(x, y, randomly_chosen, flip):
     st.permutations(range(3)),
     hnp.arrays(dtype=jnp.bool, shape=(3,)),
 )
-def test_better_than_random_permutation_prop_3(x, y, randomly_chosen, flip):
+def test_better_than_random_permutation_prop_3(x, y, randomly_chosen, flip) -> None:
     prop_better_than_random_permutation(
         jnp.array(x),
         jnp.array(y),
-        jnp.array(randomly_chosen, dtype=jnp.uint16),
+        jnp.array(randomly_chosen, dtype=jnp.uint32),
         jnp.array(flip, dtype=jnp.bool),
     )
 
@@ -392,11 +392,11 @@ def test_better_than_random_permutation_prop_3(x, y, randomly_chosen, flip):
     st.permutations(range(4)),
     hnp.arrays(dtype=jnp.bool, shape=(4,)),
 )
-def test_better_than_random_permutation_prop_4(x, y, randomly_chosen, flip):
+def test_better_than_random_permutation_prop_4(x, y, randomly_chosen, flip) -> None:
     prop_better_than_random_permutation(
         jnp.array(x),
         jnp.array(y),
-        jnp.array(randomly_chosen, dtype=jnp.uint16),
+        jnp.array(randomly_chosen, dtype=jnp.uint32),
         jnp.array(flip, dtype=jnp.bool),
     )
 
@@ -407,11 +407,11 @@ def test_better_than_random_permutation_prop_4(x, y, randomly_chosen, flip):
     st.permutations(range(5)),
     hnp.arrays(dtype=jnp.bool, shape=(5,)),
 )
-def test_better_than_random_permutation_prop_5(x, y, randomly_chosen, flip):
+def test_better_than_random_permutation_prop_5(x, y, randomly_chosen, flip) -> None:
     prop_better_than_random_permutation(
         jnp.array(x),
         jnp.array(y),
-        jnp.array(randomly_chosen, dtype=jnp.uint16),
+        jnp.array(randomly_chosen, dtype=jnp.uint32),
         jnp.array(flip, dtype=jnp.bool),
     )
 
@@ -421,8 +421,9 @@ def prop_permute_hidden_layers(
     w: Weights,
     p: list[Permutation],
     x: Float[Array, "batch ndim"],
-):
-    assert layers(w) == len(p) + 1
+    nl: Callable = jnn.gelu,
+) -> None:
+    assert layers(w) == len(p) + 1, f"{layers(w)} =/= {len(p)} + 1"
     if (
         (not all([jnp.all(jnp.isfinite(w)) for w in w.W]))
         or (not all([jnp.all(jnp.isfinite(b)) for b in w.B]))
@@ -433,13 +434,16 @@ def prop_permute_hidden_layers(
     ):
         return
     wp = permutations.permute_hidden_layers(w, p)
-    y = feedforward.run(w, x, jnn.gelu)
-    yp = feedforward.run(wp, x, jnn.gelu)
-    assert jnp.allclose(y, yp)
+    print("wp")
+    print(wp)
+    print()
+    y = feedforward.run(w, x, nl)
+    yp = feedforward.run(wp, x, nl)
+    assert jnp.allclose(y, yp), f"\n{y}\n=/=\n{yp}"
 
 
 @jaxtyped(typechecker=beartype)
-def test_permute_hidden_layers_1():
+def test_permute_hidden_layers_1() -> None:
     prop_permute_hidden_layers(
         Weights(jnp.zeros([3, 5, 5]), jnp.zeros([3, 5])),
         [no_flip(range(5)) for _ in range(2)],
@@ -447,6 +451,53 @@ def test_permute_hidden_layers_1():
     )
 
 
+@jaxtyped(typechecker=beartype)
+def test_permute_hidden_layers_2() -> None:
+    prop_permute_hidden_layers(
+        w=Weights(
+            W=jnp.ones([3, 5, 5], dtype=jnp.float64),
+            B=jnp.ones([3, 5], dtype=jnp.float64),
+        ),
+        p=[
+            no_flip(range(5)),
+            Permutation(
+                indices=jnp.arange(5, dtype=jnp.uint32),
+                flip=jnp.array([False, False, False, False, True], dtype=jnp.bool),
+            ),
+        ],
+        x=jnp.zeros([1, 5], dtype=jnp.float32),
+    )
+
+
+@given(
+    hnp.arrays(dtype=jnp.float64, shape=(2, 5, 5)),
+    hnp.arrays(dtype=jnp.float64, shape=(2, 5)),
+    st.lists(st.permutations(range(5)), min_size=1, max_size=1),
+    st.lists(st.lists(st.booleans(), min_size=5, max_size=5), min_size=1, max_size=1),
+    hnp.arrays(dtype=jnp.float32, shape=(1, 5)),
+)
+@jaxtyped(typechecker=beartype)
+def test_permute_hidden_layers_prop_1(
+    W: ArrayLike,
+    B: ArrayLike,
+    P: list[list[int]],
+    F: list[list[bool]],
+    x: ArrayLike,
+) -> None:
+    prop_permute_hidden_layers(
+        Weights(jnp.array(W, dtype=jnp.float64), jnp.array(B, dtype=jnp.float64)),
+        [
+            Permutation(
+                indices=jnp.array(p, dtype=jnp.uint32),
+                flip=jnp.array(f, dtype=jnp.bool),
+            )
+            for p, f in zip(P, F)
+        ],
+        jnp.array(x, dtype=jnp.float32),
+    )
+
+
+@reproduce_failure("6.99.12", b"AXicY2CAA0YG7GwsIgAAjQAE")
 @given(
     hnp.arrays(dtype=jnp.float64, shape=(3, 5, 5)),
     hnp.arrays(dtype=jnp.float64, shape=(3, 5)),
@@ -455,18 +506,46 @@ def test_permute_hidden_layers_1():
     hnp.arrays(dtype=jnp.float32, shape=(1, 5)),
 )
 @jaxtyped(typechecker=beartype)
-def test_permute_hidden_layers_prop(
+def test_permute_hidden_layers_prop_2(
     W: ArrayLike,
     B: ArrayLike,
     P: list[list[int]],
     F: list[list[bool]],
     x: ArrayLike,
-):
+) -> None:
     prop_permute_hidden_layers(
         Weights(jnp.array(W, dtype=jnp.float64), jnp.array(B, dtype=jnp.float64)),
         [
             Permutation(
-                indices=jnp.array(p, dtype=jnp.uint16),
+                indices=jnp.array(p, dtype=jnp.uint32),
+                flip=jnp.array(f, dtype=jnp.bool),
+            )
+            for p, f in zip(P, F)
+        ],
+        jnp.array(x, dtype=jnp.float32),
+    )
+
+
+@given(
+    hnp.arrays(dtype=jnp.float64, shape=(4, 5, 5)),
+    hnp.arrays(dtype=jnp.float64, shape=(4, 5)),
+    st.lists(st.permutations(range(5)), min_size=3, max_size=3),
+    st.lists(st.lists(st.booleans(), min_size=5, max_size=5), min_size=3, max_size=3),
+    hnp.arrays(dtype=jnp.float32, shape=(1, 5)),
+)
+@jaxtyped(typechecker=beartype)
+def test_permute_hidden_layers_prop_3(
+    W: ArrayLike,
+    B: ArrayLike,
+    P: list[list[int]],
+    F: list[list[bool]],
+    x: ArrayLike,
+) -> None:
+    prop_permute_hidden_layers(
+        Weights(jnp.array(W, dtype=jnp.float64), jnp.array(B, dtype=jnp.float64)),
+        [
+            Permutation(
+                indices=jnp.array(p, dtype=jnp.uint32),
                 flip=jnp.array(f, dtype=jnp.bool),
             )
             for p, f in zip(P, F)
@@ -476,7 +555,7 @@ def test_permute_hidden_layers_prop(
 
 
 @jaxtyped(typechecker=beartype)
-def test_layer_distance():
+def test_layer_distance() -> None:
     eye = jnp.eye(5, 5)
     perm = no_flip([3, 1, 4, 2, 0])
     inv_perm = no_flip([4, 1, 3, 0, 2])
@@ -506,7 +585,7 @@ def prop_optim_trivial(
         PyTree[Float64[Array, "..."]],
     ],
     power: Float[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
-):
+) -> None:
     x = jnp.array([[30], [-10]], dtype=jnp.float32)
     opt_state = opt_state_init(x, opt_params)
     loss = lambda x: jnp.sum(jnp.abs(10 - x))
@@ -517,7 +596,7 @@ def prop_optim_trivial(
 
 
 @jaxtyped(typechecker=beartype)
-def test_optim_trivial():
+def test_optim_trivial() -> None:
     # Why all in one test?
     # Pytest seems to restart on every test, thus erasing JIT-compiled functions,
     # and this should significantly speed things up.
@@ -567,7 +646,7 @@ def prop_optim(
         PyTree[Float64[Array, "..."]],
     ],
     power: Float[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
-):
+) -> None:
     shapes = tuple([NDIM for _ in range(LAYERS + 1)])
     w = feedforward.init(shapes, jrnd.PRNGKey(42), False)
     key = jrnd.PRNGKey(42)
@@ -595,7 +674,7 @@ def prop_optim(
 
 
 @jaxtyped(typechecker=beartype)
-def test_prop_optim():
+def test_prop_optim() -> None:
     # Why all in one test?
     # Pytest seems to restart on every test, thus erasing JIT-compiled functions,
     # and this should significantly speed things up.
@@ -645,7 +724,7 @@ def prop_optim_downhill(
         PyTree[Float64[Array, "..."]],
     ],
     power: Float[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
-):
+) -> None:
     # print(f"Initl optimizer parameters: {opt_params}")
     orig_opt_params = opt_params
     shapes = tuple([NDIM for _ in range(LAYERS + 1)])
@@ -689,7 +768,7 @@ def prop_optim_downhill(
 
 
 @jaxtyped(typechecker=beartype)
-def test_prop_optim_downhill():
+def test_prop_optim_downhill() -> None:
     # Why all in one test?
     # Pytest seems to restart on every test, thus erasing JIT-compiled functions,
     # and this should significantly speed things up.
@@ -739,7 +818,7 @@ def prop_optim_global(
         PyTree[Float64[Array, "..."]],
     ],
     power: Float[Array, ""] = jnp.array(2.0, dtype=jnp.float32),
-):
+) -> None:
     # print(f"Initl optimizer parameters: {opt_params}")
     orig_opt_params = opt_params
     [w, w_ideal] = [
@@ -795,7 +874,7 @@ def prop_optim_global(
 
 
 @jaxtyped(typechecker=beartype)
-def test_prop_optim_global():
+def test_prop_optim_global() -> None:
     # Why all in one test?
     # Pytest seems to restart on every test, thus erasing JIT-compiled functions,
     # and this should significantly speed things up.
